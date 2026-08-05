@@ -1,0 +1,25 @@
+# IMPORTANT: The OTel Collector merges config files but REPLACES arrays, not appends.
+# You must fully re-declare all pipelines (traces, logs, metrics) including every upstream
+# receiver, processor, and exporter you still want, plus the new otlp/signoz exporter.
+# Omitting a pipeline block here will silently drop that telemetry type entirely.
+
+exporters:
+  otlp/signoz:
+    endpoint: "ingester:4317" # Needs the exact signoz collector container name or service name on incimin network
+    tls:
+      insecure: true
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [resourcedetection, memory_limiter, transform/sanitize_spans, gen_ai_normalizer]
+      exporters: [debug, span_metrics, otlp/signoz]
+    metrics:
+      receivers: [docker_stats, http_check/frontend-proxy, host_metrics, nginx, otlp, redis, postgresql, prometheus/ad, span_metrics]
+      processors: [resourcedetection, memory_limiter]
+      exporters: [debug, otlp/signoz]
+    logs:
+      receivers: [otlp]
+      processors: [resourcedetection, memory_limiter, transform/sanitize_logs]
+      exporters: [debug, otlp/signoz]
