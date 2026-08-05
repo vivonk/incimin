@@ -13,7 +13,7 @@ Five phases gate-on-gate from infrastructure readiness to a live demo. Phase 1 l
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Infrastructure Foundation** - Full Docker Compose stack verified, telemetry flowing, no port conflicts
+- [x] **Phase 1: Infrastructure Foundation** - Full Docker Compose stack verified, telemetry flowing, no port conflicts
 - [ ] **Phase 2: Data Plane Initialization** - All three data planes seeded and smoke-tested (3 parallel tracks)
 - [ ] **Phase 3: Agent Core** - LangGraph state machine assembled, guarded, and unit-tested
 - [ ] **Phase 4: UI Integration & Demo Choreography** - Streamlit chat UI and chaos injection scripts validated
@@ -54,7 +54,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 01-04-PLAN.md — Single-command verification gate across all three planes, measured memory baseline, cold-start reproducibility
+- [x] 01-04-PLAN.md — Single-command verification gate across all three planes, measured memory baseline, cold-start reproducibility
 
 ### Phase 2: Data Plane Initialization
 
