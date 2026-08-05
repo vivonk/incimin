@@ -8,3 +8,4 @@ include:
 networks:
   incimin:
     name: incimin
+    external: true

@@ -1,0 +1,47 @@
+# Phase 1 Resource Baseline
+```
+NAME                                                                                                                     MEM USAGE / LIMIT    MEM %
+load-generator                                                                                                           438.6MiB / 512MiB    85.66%
+frontend-proxy                                                                                                           60.66MiB / 90MiB     67.40%
+frontend                                                                                                                 98.02MiB / 250MiB    39.21%
+checkout                                                                                                                 16.45MiB / 20MiB     82.27%
+incimin-ingester-1                                                                                                       176.2MiB / 15.6GiB   1.10%
+recommendation                                                                                                           59.07MiB / 500MiB    11.81%
+signoz-signoz-0                                                                                                          122.8MiB / 15.6GiB   0.77%
+payment                                                                                                                  103.5MiB / 140MiB    73.94%
+shipping                                                                                                                 6.02MiB / 20MiB      30.10%
+product-catalog                                                                                                          14.73MiB / 20MiB     73.65%
+ad                                                                                                                       224.4MiB / 300MiB    74.81%
+cart                                                                                                                     51.84MiB / 160MiB    32.40%
+signoz-telemetrystore-clickhouse-0-0                                                                                     1.054GiB / 15.6GiB   6.76%
+incimin-memgraph-lab-1                                                                                                   80.71MiB / 15.6GiB   0.51%
+flagd-ui                                                                                                                 166.1MiB / 200MiB    83.04%
+quote                                                                                                                    20.36MiB / 40MiB     50.89%
+currency                                                                                                                 5.98MiB / 20MiB      29.90%
+image-provider                                                                                                           7.574MiB / 120MiB    6.31%
+email                                                                                                                    51.14MiB / 100MiB    51.14%
+telemetry-docs                                                                                                           6.387MiB / 100MiB    6.39%
+signoz-metastore-postgres-0                                                                                              32.91MiB / 15.6GiB   0.21%
+astronomy-db                                                                                                             59.96MiB / 80MiB     74.96%
+incimin-qdrant-1                                                                                                         94.16MiB / 15.6GiB   0.59%
+flagd                                                                                                                    43.19MiB / 75MiB     57.58%
+signoz-telemetrykeeper-clickhousekeeper-0                                                                                160.2MiB / 15.6GiB   1.00%
+incimin-memgraph-1                                                                                                       690.3MiB / 15.6GiB   4.32%
+otel-collector                                                                                                           106.7MiB / 400MiB    26.67%
+valkey-cart                                                                                                              5.633MiB / 20MiB     28.16%
+k8s_POD_kubernetes-delegate-64d64576c5-lzb94_harness-delegate-ng_46586f97-bf2f-4220-9eb4-fc2d1df86aa9_0                  280KiB / 15.6GiB     0.00%
+bazel-runner                                                                                                             4.062GiB / 15.6GiB   26.04%
+k8s_coredns_coredns-6d668d687-dmsc5_kube-system_80f27d56-c9fc-4a82-b012-ce9021b3f554_157                                 27.98MiB / 170MiB    16.46%
+k8s_POD_coredns-6d668d687-dmsc5_kube-system_80f27d56-c9fc-4a82-b012-ce9021b3f554_32                                      268KiB / 15.6GiB     0.00%
+k8s_lb-tcp-443_svclb-traefik-8f2c4b99-c784b_kube-system_26ed9c77-5419-48bc-83c3-951ae9980381_29                          256KiB / 15.6GiB     0.00%
+k8s_metrics-server_metrics-server-7bfffcd44-fbzq9_kube-system_af544c4b-39e5-47e0-9317-521ada8882a4_100                   43.7MiB / 15.6GiB    0.27%
+k8s_lb-tcp-80_svclb-traefik-8f2c4b99-c784b_kube-system_26ed9c77-5419-48bc-83c3-951ae9980381_29                           376KiB / 15.6GiB     0.00%
+k8s_local-path-provisioner_local-path-provisioner-869c44bfbd-cfnn7_kube-system_086860de-6a0f-4d56-82b2-2dd94ac0b757_30   12.25MiB / 15.6GiB   0.08%
+k8s_traefik_traefik-865bd56545-b5nr4_kube-system_fb2e39a4-2037-4838-8b4e-49abd776c448_169                                32.84MiB / 15.6GiB   0.21%
+k8s_POD_local-path-provisioner-869c44bfbd-cfnn7_kube-system_086860de-6a0f-4d56-82b2-2dd94ac0b757_33                      268KiB / 15.6GiB     0.00%
+k8s_POD_metrics-server-7bfffcd44-fbzq9_kube-system_af544c4b-39e5-47e0-9317-521ada8882a4_36                               268KiB / 15.6GiB     0.00%
+k8s_POD_traefik-865bd56545-b5nr4_kube-system_fb2e39a4-2037-4838-8b4e-49abd776c448_35                                     268KiB / 15.6GiB     0.00%
+k8s_POD_svclb-traefik-8f2c4b99-c784b_kube-system_26ed9c77-5419-48bc-83c3-951ae9980381_35                                 268KiB / 15.6GiB     0.00%
+buildx_buildkit_multiplatform0                                                                                           21.14MiB / 15.6GiB   0.13%
+mongoContainer                                                                                                           318MiB / 15.6GiB     1.99%
+```
