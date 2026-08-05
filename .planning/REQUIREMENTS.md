@@ -33,12 +33,12 @@
 
 ### Agent Orchestration (LangGraph)
 
-- [ ] **AGENT-01**: LangGraph `SREAgentState` TypedDict with `add_messages` reducer and typed `IncidentContext` defined and tested
-- [ ] **AGENT-02**: Three `@tool` decorated functions — `graph_bfs_tool`, `clickhouse_log_tool`, `qdrant_runbook_tool` — each touching exactly one data plane; no cross-plane access within a tool
-- [ ] **AGENT-03**: StateGraph compiled with `recursion_limit=10` and a `RemainingSteps` guard that routes to a graceful "insufficient data" response when `remaining_steps <= 2`
-- [ ] **AGENT-04**: Agent uses Anthropic Claude (claude-sonnet-5 or latest Sonnet) as the LLM backbone via `langchain-anthropic`
-- [ ] **AGENT-05**: Agent never outputs or suggests remediation actions — response format is: root cause identification + recommended next steps (human executes)
-- [ ] **AGENT-06**: Each tool has unit tests with mock clients verifying correct output format and error handling
+- [x] **AGENT-01**: LangGraph `SREAgentState` TypedDict with `add_messages` reducer and typed `IncidentContext` defined and tested
+- [x] **AGENT-02**: Three `@tool` decorated functions — `graph_bfs_tool`, `clickhouse_log_tool`, `qdrant_runbook_tool` — each touching exactly one data plane; no cross-plane access within a tool
+- [x] **AGENT-03**: StateGraph compiled with `recursion_limit=10` and a `RemainingSteps` guard that routes to a graceful "insufficient data" response when `remaining_steps <= 2`
+- [x] **AGENT-04**: Agent uses Anthropic Claude (claude-sonnet-5 or latest Sonnet) as the LLM backbone via `langchain-anthropic`
+- [x] **AGENT-05**: Agent never outputs or suggests remediation actions — response format is: root cause identification + recommended next steps (human executes)
+- [x] **AGENT-06**: Each tool has unit tests with mock clients verifying correct output format and error handling
 
 ### Demo Interface (Streamlit)
 
@@ -109,12 +109,12 @@
 | KNOW-01 | Phase 2 | Complete |
 | KNOW-02 | Phase 2 | Complete |
 | KNOW-03 | Phase 2 | Complete |
-| AGENT-01 | Phase 3 | Pending |
-| AGENT-02 | Phase 3 | Pending |
-| AGENT-03 | Phase 3 | Pending |
-| AGENT-04 | Phase 3 | Pending |
-| AGENT-05 | Phase 3 | Pending |
-| AGENT-06 | Phase 3 | Pending |
+| AGENT-01 | Phase 3 | Complete |
+| AGENT-02 | Phase 3 | Complete |
+| AGENT-03 | Phase 3 | Complete |
+| AGENT-04 | Phase 3 | Complete |
+| AGENT-05 | Phase 3 | Complete |
+| AGENT-06 | Phase 3 | Complete |
 | UI-01 | Phase 4 | Pending |
 | UI-02 | Phase 4 | Pending |
 | UI-03 | Phase 4 | Pending |

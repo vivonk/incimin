@@ -15,7 +15,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Infrastructure Foundation** - Full Docker Compose stack verified, telemetry flowing, no port conflicts
 - [ ] **Phase 2: Data Plane Initialization** - All three data planes seeded and smoke-tested (3 parallel tracks)
-- [ ] **Phase 3: Agent Core** - LangGraph state machine assembled, guarded, and unit-tested
+- [x] **Phase 3: Agent Core** - LangGraph state machine assembled, guarded, and unit-tested (completed 2026-08-06)
 - [ ] **Phase 4: UI Integration & Demo Choreography** - Streamlit chat UI and chaos injection scripts validated
 - [ ] **Phase 5: Golden Path Validation** - Full demo scenario runs end-to-end under 60 seconds
 
@@ -142,6 +142,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 |-------|----------------|--------|-----------|
 | 1. Infrastructure Foundation | 4/4 | Complete | 2026-08-05 |
 | 2. Data Plane Initialization | 3/4 | In Progress|  |
-| 3. Agent Core | 0/? | Not started | - |
+| 3. Agent Core | 1/1 | Complete    | 2026-08-06 |
 | 4. UI Integration & Demo Choreography | 0/? | Not started | - |
 | 5. Golden Path Validation | 0/? | Not started | - |
