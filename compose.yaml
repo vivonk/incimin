@@ -1,0 +1,8 @@
+name: incimin
+
+include:
+  - docker/compose.core.yaml
+
+networks:
+  incimin:
+    name: incimin
