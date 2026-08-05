@@ -12,19 +12,18 @@ When an incident fires, the agent autonomously traverses the live service graph,
 
 ### Validated
 
-(None yet — ship to validate)
+- [x] LangGraph state machine with 3 deterministic tools: Cypher/BFS graph traversal, ClickHouse SQL log query, Qdrant semantic runbook search (Validated in Phase 03: agent-core)
+- [x] Agent never executes remediation actions — outputs recommendations only (Validated in Phase 03: agent-core)
 
 ### Active
 
 - [ ] Full Docker Compose local stack: OTel Astronomy Shop (14 services) + SigNoz + Memgraph + Qdrant + Streamlit + LangGraph agent
 - [ ] Memgraph service topology seeded with 14 microservice nodes, edges representing dependencies
 - [ ] Qdrant pre-hydrated with ≥3 embedded Markdown runbooks with metadata filtering
-- [ ] LangGraph state machine with 3 deterministic tools: Cypher/BFS graph traversal, ClickHouse SQL log query, Qdrant semantic runbook search
 - [ ] Chaos injection script: deterministic P1 failure (paymentservice crash → checkout latency spike)
 - [ ] Streamlit chat UI rendering real-time tool-call glass-box visibility via `st.status` expanders
 - [ ] Memgraph Lab live node-highlighting as agent traverses graph (split-screen visual)
 - [ ] End-to-end golden path: "Checkout latency is spiking" prompt → root cause + remediation output in <60 seconds
-- [ ] Agent never executes remediation actions — outputs recommendations only
 - [ ] Codebase structured for production evolution post-demo (not throwaway)
 
 ### Out of Scope
@@ -86,4 +85,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-08-05 after initialization*
+*Last updated: 2026-08-06 after Phase 03 completion*
