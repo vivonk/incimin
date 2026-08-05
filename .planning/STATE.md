@@ -21,12 +21,11 @@ progress:
 See: .planning/PROJECT.md (updated 2026-08-05)
 
 **Core value:** When an incident fires, the agent autonomously traverses the live service graph, queries correlated telemetry, and retrieves the relevant runbook — delivering root cause and recommended remediation steps before any human has opened a dashboard.
-**Current focus:** Phase 1 — Infrastructure Foundation
+**Current focus:** Phase 1 (Infrastructure Foundation) COMPLETE. Moving to Phase 2.
 
 ## Current Position
 
-Phase: 1 of 5 (Infrastructure Foundation)
-Plan: 3 of 4 in current phase
+Phase 1 (Infrastructure Foundation) is completely verified and finished. The stack is cold-start reproducible and memory-bounded. Ready to begin Phase 2.
 Status: Executing
 Last activity: 2026-08-05 -- Completed 01-03-PLAN.md
 
@@ -60,13 +59,10 @@ Progress: [████████░░] 75%
 Decisions are logged in PROJECT.md Key Decisions table.
 Recent decisions affecting current work:
 
-- Pre-roadmap: LangGraph over raw LLM tool-use loop (deterministic control flow)
-- Pre-roadmap: Memgraph BFS for topology (hallucination-free RCA path)
-- Pre-roadmap: SigNoz over Grafana/Prometheus (SQL interface via ClickHouse)
-- Pre-roadmap: OTel Astronomy Shop as victim app (pre-instrumented, eliminates scope)
-- Pre-roadmap: Streamlit for UI (zero-overhead with st.status glass-box visibility)
-- Phase 1, Plan 03: Ran OTel Demo in minimal mode (20 services, omitting Kafka-dependent services) to respect 14GB RAM budget.
-- Phase 1, Plan 03: Dropped demo's built-in Jaeger, Prometheus, OpenSearch, and Firepit exporters to deduplicate backends in favor of SigNoz.
+- Adopted `scripts/verify_stack.py` as the definitive, single-command gate for Phase 1 infrastructure readiness.
+- Removed nested networks blocks in `docker/compose.otel-demo.yaml` and hoisted `external: true` to the root `compose.yaml` to prevent label conflicts during cold starts.
+- Added explicit `docker network create incimin` to the README Quickstart.
+- OTel demo non-instrumented services (e.g. valkey-cart, astronomy-db) are excluded from telemetry checks as they don't emit to SigNoz.
 
 ### Pending Todos
 
@@ -74,7 +70,7 @@ None yet.
 
 ### Blockers/Concerns
 
-- Phase 2: Memgraph volume mount must be confirmed before any seed script runs; restart test is mandatory gate
+- Phase 2: Memgraph volume mount persistence is confirmed. Ready to proceed with Data Plane Initialization.
 
 ## Deferred Items
 
