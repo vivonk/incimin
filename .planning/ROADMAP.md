@@ -31,7 +31,16 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. Memgraph container is reachable and data persists across `docker compose restart memgraph` (named volume confirmed)
   4. `docker stats` baseline shows no OOM kills and host memory stays within 14GB Docker Desktop allocation
   5. ClickHouse table name for SigNoz v0.135.1 logs is confirmed (`distributed_logs` vs `distributed_logs_v2` ambiguity resolved via `SHOW TABLES`)
-**Plans**: TBD
+
+**Note on criterion 2**: OTel demo runs in *minimal* mode (D-07, required by the 14GB budget), which drops Kafka and its dependent services. The true service count is below 14. Plan 01-03 records the actual minimal-mode service list in `docs/OTEL_DEMO_SERVICES.md`; that file supersedes the "all 14" wording here. The three golden-path services (payment, checkout, frontend) must all be present.
+
+**Plans**: 4 plans in 4 waves
+
+Plans:
+- [ ] 01-01-PLAN.md — Repo scaffold, canonical port ledger, Memgraph MAGE + Lab + Qdrant online with proven restart persistence
+- [ ] 01-02-PLAN.md — SigNoz + ClickHouse deployed via foundryctl, ClickHouse schema ambiguity resolved, OTLP ingress smoke-tested
+- [ ] 01-03-PLAN.md — OTel Astronomy Shop minimal mode on 8090, telemetry routed to SigNoz via pipeline-complete collector overlay, project-wide port audit
+- [ ] 01-04-PLAN.md — Single-command verification gate across all three planes, measured memory baseline, cold-start reproducibility
 
 ### Phase 2: Data Plane Initialization
 **Goal**: All three data planes independently seeded, verified, and query-ready for agent integration
@@ -92,7 +101,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Infrastructure Foundation | 0/? | Not started | - |
+| 1. Infrastructure Foundation | 0/4 | Planned | - |
 | 2. Data Plane Initialization | 0/? | Not started | - |
 | 3. Agent Core | 0/? | Not started | - |
 | 4. UI Integration & Demo Choreography | 0/? | Not started | - |
