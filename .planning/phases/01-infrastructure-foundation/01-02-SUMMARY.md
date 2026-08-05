@@ -18,14 +18,14 @@ affects: [01-03, 01-04, phase-02]
 
 tech-stack:
   added:
-    - signoz/signoz:v0.135.1
-    - signoz/signoz-otel-collector:v0.144.7
-    - clickhouse/clickhouse-server:24.8.14.39
-    - clickhouse/clickhouse-keeper:24.8.14.39
+    - signoz/signoz:latest (v0.135.x line)
+    - signoz/signoz-otel-collector:latest
+    - clickhouse/clickhouse-server:25.12.5
+    - clickhouse/clickhouse-keeper:25.12.5
     - postgres:16 (SigNoz metastore)
   patterns:
-    - foundryctl cast generates Compose manifest; committed manifest used at runtime
-    - ClickHouse pinned to 24.8.x (not 24.1.x) due to JSON type requirement
+    - foundryctl v0.2.17 forge generates Compose manifest; committed manifest used at runtime
+    - ClickHouse 25.12.5 is what foundryctl v0.2.17 resolves; earlier 24.8.x caused migration failures
 
 key-files:
   created:

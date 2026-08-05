@@ -1,7 +1,8 @@
 # SigNoz v0.135.1 ClickHouse Schema Contract
 
-**Verified against:** live `clickhouse/clickhouse-server:24.8.14.39` instance running with SigNoz v0.135.1
+**Verified against:** live `clickhouse/clickhouse-server:25.12.5` instance running with SigNoz latest (v0.135.x line)
 **Resolved:** 2026-08-05 — closes D-10 / TELE-03 / Research Flag 1
+**Re-verified:** 2026-08-05 after ClickHouse upgrade to 25.12.5 — schema contract unchanged
 
 This document is the authoritative schema contract consumed by Phase 2 tools (TELE-01, TELE-02).
 Do not edit manually — re-run `SHOW TABLES` / `DESCRIBE TABLE` against the live instance to update.
