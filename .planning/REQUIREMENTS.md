@@ -15,9 +15,9 @@
 
 ### Topology Plane (Memgraph)
 
-- [ ] **TOPO-01**: Seed script populates Memgraph with all 14 OTel Astronomy Shop service nodes and their dependency edges using `MERGE` (idempotent)
-- [ ] **TOPO-02**: BFS traversal tool queries Memgraph using `[*BFS]` Cypher syntax and returns the dependency path from a given source service to the root cause service
-- [ ] **TOPO-03**: Topology graph survives `docker compose restart memgraph` with all 14 nodes intact
+- [x] **TOPO-01**: Seed script populates Memgraph with all 14 OTel Astronomy Shop service nodes and their dependency edges using `MERGE` (idempotent)
+- [x] **TOPO-02**: BFS traversal tool queries Memgraph using `[*BFS]` Cypher syntax and returns the dependency path from a given source service to the root cause service
+- [x] **TOPO-03**: Topology graph survives `docker compose restart memgraph` with all 14 nodes intact
 
 ### Telemetry Plane (SigNoz / ClickHouse)
 
@@ -27,9 +27,9 @@
 
 ### Knowledge Plane (Qdrant)
 
-- [ ] **KNOW-01**: Qdrant `runbooks` collection hydrated with ≥3 embedded Markdown runbooks: paymentservice crash, checkoutservice high-latency, frontendservice 5xx errors
-- [ ] **KNOW-02**: Runbooks embedded with fastembed `BAAI/bge-small-en-v1.5` (384-dim); collection dimension matches client embedding dimension
-- [ ] **KNOW-03**: Runbook search tool returns the correct playbook for a given incident description via semantic similarity + payload metadata filtering
+- [x] **KNOW-01**: Qdrant `runbooks` collection hydrated with ≥3 embedded Markdown runbooks: paymentservice crash, checkoutservice high-latency, frontendservice 5xx errors
+- [x] **KNOW-02**: Runbooks embedded with fastembed `BAAI/bge-small-en-v1.5` (384-dim); collection dimension matches client embedding dimension
+- [x] **KNOW-03**: Runbook search tool returns the correct playbook for a given incident description via semantic similarity + payload metadata filtering
 
 ### Agent Orchestration (LangGraph)
 
@@ -100,15 +100,15 @@
 | INFRA-03 | Phase 1 | Complete |
 | INFRA-04 | Phase 1 | Pending |
 | INFRA-05 | Phase 1 | Pending |
-| TOPO-01 | Phase 2 | Pending |
-| TOPO-02 | Phase 2 | Pending |
-| TOPO-03 | Phase 2 | Pending |
+| TOPO-01 | Phase 2 | Complete |
+| TOPO-02 | Phase 2 | Complete |
+| TOPO-03 | Phase 2 | Complete |
 | TELE-01 | Phase 2 | Complete |
 | TELE-02 | Phase 2 | Complete |
 | TELE-03 | Phase 1 | Pending |
-| KNOW-01 | Phase 2 | Pending |
-| KNOW-02 | Phase 2 | Pending |
-| KNOW-03 | Phase 2 | Pending |
+| KNOW-01 | Phase 2 | Complete |
+| KNOW-02 | Phase 2 | Complete |
+| KNOW-03 | Phase 2 | Complete |
 | AGENT-01 | Phase 3 | Pending |
 | AGENT-02 | Phase 3 | Pending |
 | AGENT-03 | Phase 3 | Pending |
