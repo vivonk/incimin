@@ -21,8 +21,8 @@
 
 ### Telemetry Plane (SigNoz / ClickHouse)
 
-- [ ] **TELE-01**: Log query tool generates parameterized SQL against `signoz_logs.distributed_logs` (or the verified v0.135.1 equivalent) using nanosecond timestamps
-- [ ] **TELE-02**: Log query tool returns ERROR-level logs and trace IDs for a specified service within a specified time window
+- [x] **TELE-01**: Log query tool generates parameterized SQL against `signoz_logs.distributed_logs` (or the verified v0.135.1 equivalent) using nanosecond timestamps
+- [x] **TELE-02**: Log query tool returns ERROR-level logs and trace IDs for a specified service within a specified time window
 - [ ] **TELE-03**: ClickHouse table name and schema verified against the running SigNoz v0.135.1 instance (resolves `distributed_logs` vs `distributed_logs_v2` ambiguity)
 
 ### Knowledge Plane (Qdrant)
@@ -103,8 +103,8 @@
 | TOPO-01 | Phase 2 | Pending |
 | TOPO-02 | Phase 2 | Pending |
 | TOPO-03 | Phase 2 | Pending |
-| TELE-01 | Phase 2 | Pending |
-| TELE-02 | Phase 2 | Pending |
+| TELE-01 | Phase 2 | Complete |
+| TELE-02 | Phase 2 | Complete |
 | TELE-03 | Phase 1 | Pending |
 | KNOW-01 | Phase 2 | Pending |
 | KNOW-02 | Phase 2 | Pending |
