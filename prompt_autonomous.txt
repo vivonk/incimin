@@ -1,0 +1,3 @@
+Please run the gsd-autonomous skill to run all remaining phases in the roadmap without any manual input. Automatically iterate through discuss-phase, plan-phase, and execute-phase for each phase. As each plan and phase completes, seamlessly continue to the next one until the entire project roadmap is fully completed.
+
+You can also use the `/gsd autonomous` shortcut if available.
