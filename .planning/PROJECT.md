@@ -12,19 +12,20 @@ When an incident fires, the agent autonomously traverses the live service graph,
 
 ### Validated
 
-- [x] LangGraph state machine with 3 deterministic tools: Cypher/BFS graph traversal, ClickHouse SQL log query, Qdrant semantic runbook search (Validated in Phase 03: agent-core)
-- [x] Agent never executes remediation actions — outputs recommendations only (Validated in Phase 03: agent-core)
-- [x] End-to-end golden path: "Checkout latency is spiking" prompt → root cause + remediation output in <60 seconds (Validated in Phase 05: golden-path-validation)
+- ✓ LangGraph state machine with 3 deterministic tools: Cypher/BFS graph traversal, ClickHouse SQL log query, Qdrant semantic runbook search — v1.5
+- ✓ Agent never executes remediation actions — outputs recommendations only — v1.5
+- ✓ End-to-end golden path: "Checkout latency is spiking" prompt → root cause + remediation output in <60 seconds — v1.5
+- ✓ Full Docker Compose local stack: OTel Astronomy Shop (14 services) + SigNoz + Memgraph + Qdrant + Streamlit + LangGraph agent — v1.5
+- ✓ Memgraph service topology seeded with 14 microservice nodes, edges representing dependencies — v1.5
+- ✓ Qdrant pre-hydrated with ≥3 embedded Markdown runbooks with metadata filtering — v1.5
+- ✓ Chaos injection script: deterministic P1 failure (paymentservice crash → checkout latency spike) — v1.5
+- ✓ Streamlit chat UI rendering real-time tool-call glass-box visibility via `st.status` expanders — v1.5
+- ✓ Memgraph Lab live node-highlighting as agent traverses graph (split-screen visual) — v1.5
+- ✓ Codebase structured for production evolution post-demo (not throwaway) — v1.5
 
 ### Active
 
-- [ ] Full Docker Compose local stack: OTel Astronomy Shop (14 services) + SigNoz + Memgraph + Qdrant + Streamlit + LangGraph agent
-- [ ] Memgraph service topology seeded with 14 microservice nodes, edges representing dependencies
-- [ ] Qdrant pre-hydrated with ≥3 embedded Markdown runbooks with metadata filtering
-- [ ] Chaos injection script: deterministic P1 failure (paymentservice crash → checkout latency spike)
-- [ ] Streamlit chat UI rendering real-time tool-call glass-box visibility via `st.status` expanders
-- [ ] Memgraph Lab live node-highlighting as agent traverses graph (split-screen visual)
-- [ ] Codebase structured for production evolution post-demo (not throwaway)
+(None yet — planning next milestone)
 
 ### Out of Scope
 
@@ -60,12 +61,12 @@ When an incident fires, the agent autonomously traverses the live service graph,
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| LangGraph over raw LLM tool-use loop | State machine gives deterministic control flow + transparent debugging; critical for demo reliability | — Pending |
-| Memgraph BFS for topology (not LLM inference) | Eliminates hallucination risk in the critical RCA path | — Pending |
-| SigNoz over raw Grafana/Prometheus | Provides unified logs+traces+metrics with a SQL interface (ClickHouse), enabling dynamic query generation by the agent | — Pending |
-| OTel Astronomy Shop as victim app | Pre-instrumented, multi-service, realistic telemetry — eliminates instrumentation scope from the sprint | — Pending |
-| Streamlit for UI | Zero-overhead chat UI with `st.status` expanders for glass-box tool visibility; not investing in custom frontend for demo | — Pending |
-| Recommendations-only agent (no auto-remediation) | Reduces blast radius risk for enterprise adoption; keeps v1 scope achievable | — Pending |
+| LangGraph over raw LLM tool-use loop | State machine gives deterministic control flow + transparent debugging; critical for demo reliability | ✓ Good |
+| Memgraph BFS for topology (not LLM inference) | Eliminates hallucination risk in the critical RCA path | ✓ Good |
+| SigNoz over raw Grafana/Prometheus | Provides unified logs+traces+metrics with a SQL interface (ClickHouse), enabling dynamic query generation by the agent | ✓ Good |
+| OTel Astronomy Shop as victim app | Pre-instrumented, multi-service, realistic telemetry — eliminates instrumentation scope from the sprint | ✓ Good |
+| Streamlit for UI | Zero-overhead chat UI with `st.status` expanders for glass-box tool visibility; not investing in custom frontend for demo | ✓ Good |
+| Recommendations-only agent (no auto-remediation) | Reduces blast radius risk for enterprise adoption; keeps v1 scope achievable | ✓ Good |
 
 ## Evolution
 
@@ -85,4 +86,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-08-06 after Phase 05 completion*
+*Last updated: 2026-08-06 after v1.5 milestone*
