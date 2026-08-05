@@ -1,0 +1,787 @@
+networks:
+  default:
+    driver: bridge
+    name: opentelemetry-demo
+services:
+  ad:
+    build:
+      args:
+        OTEL_JAVA_AGENT_VERSION: ${OTEL_JAVA_AGENT_VERSION}
+      cache_from:
+      - ${IMAGE_NAME}:${IMAGE_VERSION}-ad
+      context: ./
+      dockerfile: ${AD_DOCKERFILE}
+    container_name: ad
+    depends_on:
+      flagd:
+        condition: service_started
+      otel-collector:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 300M
+    environment:
+    - AD_PORT
+    - AD_PROMETHEUS_PORT
+    - FLAGD_HOST
+    - FLAGD_PORT
+    - OTEL_EXPORTER_OTLP_ENDPOINT=http://${OTEL_COLLECTOR_HOST}:${OTEL_COLLECTOR_PORT_HTTP}
+    - OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE
+    - OTEL_RESOURCE_ATTRIBUTES=${OTEL_RESOURCE_ATTRIBUTES},service.criticality=medium
+    - OTEL_LOGS_EXPORTER=otlp
+    - OTEL_SERVICE_NAME=ad
+    - OTEL_EXPERIMENTAL_SDK_TELEMETRY_VERSION=latest
+    - _JAVA_OPTIONS
+    healthcheck:
+      interval: 5s
+      retries: 20
+      start_period: 20s
+      test:
+      - CMD-SHELL
+      - bash -c 'echo > /dev/tcp/localhost/${AD_PORT}'
+      timeout: 5s
+    image: ${IMAGE_NAME}:${DEMO_VERSION}-ad
+    logging: &id001
+      driver: json-file
+      options:
+        max-file: '2'
+        max-size: 5m
+    restart: unless-stopped
+  astronomy-db:
+    command: postgres -c shared_preload_libraries=pg_stat_statements
+    container_name: astronomy-db
+    deploy:
+      resources:
+        limits:
+          memory: 80M
+    environment:
+    - POSTGRES_PASSWORD
+    healthcheck:
+      interval: 5s
+      retries: 10
+      start_period: 10s
+      test:
+      - CMD-SHELL
+      - pg_isready
+      timeout: 5s
+    image: ${POSTGRES_IMAGE}
+    logging: *id001
+    restart: unless-stopped
+    volumes:
+    - ./src/postgresql/init.sql:/docker-entrypoint-initdb.d/init.sql
+  cart:
+    build:
+      cache_from:
+      - ${IMAGE_NAME}:${IMAGE_VERSION}-cart
+      context: ./
+      dockerfile: ${CART_DOCKERFILE}
+    container_name: cart
+    depends_on:
+      flagd:
+        condition: service_started
+      otel-collector:
+        condition: service_started
+      valkey-cart:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 160M
+    environment:
+    - CART_PORT
+    - FLAGD_HOST
+    - FLAGD_PORT
+    - VALKEY_ADDR
+    - OTEL_EXPORTER_OTLP_ENDPOINT
+    - OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE
+    - OTEL_RESOURCE_ATTRIBUTES=${OTEL_RESOURCE_ATTRIBUTES},service.criticality=high
+    - OTEL_SERVICE_NAME=cart
+    - ASPNETCORE_URLS=http://*:${CART_PORT}
+    image: ${IMAGE_NAME}:${DEMO_VERSION}-cart
+    logging: *id001
+    restart: unless-stopped
+  checkout:
+    build:
+      cache_from:
+      - ${IMAGE_NAME}:${IMAGE_VERSION}-checkout
+      context: ./
+      dockerfile: ${CHECKOUT_DOCKERFILE}
+    container_name: checkout
+    depends_on:
+      cart:
+        condition: service_started
+      currency:
+        condition: service_healthy
+      email:
+        condition: service_healthy
+      flagd:
+        condition: service_started
+      otel-collector:
+        condition: service_started
+      payment:
+        condition: service_healthy
+      product-catalog:
+        condition: service_started
+      shipping:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 20M
+    environment:
+    - FLAGD_HOST
+    - FLAGD_PORT
+    - CHECKOUT_PORT
+    - CART_ADDR
+    - CURRENCY_ADDR
+    - EMAIL_ADDR
+    - PAYMENT_ADDR
+    - PRODUCT_CATALOG_ADDR
+    - SHIPPING_ADDR
+    - GOMEMLIMIT=16MiB
+    - OTEL_EXPORTER_OTLP_ENDPOINT=http://${OTEL_COLLECTOR_HOST}:${OTEL_COLLECTOR_PORT_HTTP}
+    - OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+    - OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE
+    - OTEL_RESOURCE_ATTRIBUTES=${OTEL_RESOURCE_ATTRIBUTES},service.criticality=critical
+    - OTEL_SERVICE_NAME=checkout
+    healthcheck:
+      interval: 5s
+      retries: 20
+      start_period: 10s
+      test:
+      - CMD
+      - /bin/grpc_health_probe
+      - -addr=:${CHECKOUT_PORT}
+      timeout: 5s
+    image: ${IMAGE_NAME}:${DEMO_VERSION}-checkout
+    logging: *id001
+    read_only: true
+    restart: unless-stopped
+    tmpfs:
+    - /tmp
+  currency:
+    build:
+      args:
+        OPENTELEMETRY_CPP_VERSION: ${OPENTELEMETRY_CPP_VERSION}
+      cache_from:
+      - ${IMAGE_NAME}:${IMAGE_VERSION}-currency
+      context: ./
+      dockerfile: ${CURRENCY_DOCKERFILE}
+    container_name: currency
+    depends_on:
+      otel-collector:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 20M
+    environment:
+    - CURRENCY_PORT
+    - IPV6_ENABLED
+    - VERSION=${IMAGE_VERSION}
+    - OTEL_EXPORTER_OTLP_ENDPOINT
+    - OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE
+    - OTEL_RESOURCE_ATTRIBUTES=${OTEL_RESOURCE_ATTRIBUTES},service.criticality=high
+    - OTEL_SERVICE_NAME=currency
+    healthcheck:
+      interval: 5s
+      retries: 20
+      start_period: 10s
+      test:
+      - CMD-SHELL
+      - nc -z localhost ${CURRENCY_PORT}
+      timeout: 5s
+    image: ${IMAGE_NAME}:${DEMO_VERSION}-currency
+    logging: *id001
+    restart: unless-stopped
+  email:
+    build:
+      cache_from:
+      - ${IMAGE_NAME}:${IMAGE_VERSION}-email
+      context: ./
+      dockerfile: ${EMAIL_DOCKERFILE}
+    container_name: email
+    depends_on:
+      otel-collector:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 100M
+    environment:
+    - APP_ENV=production
+    - EMAIL_PORT
+    - FLAGD_HOST
+    - FLAGD_PORT
+    - OTEL_EXPORTER_OTLP_ENDPOINT=http://${OTEL_COLLECTOR_HOST}:${OTEL_COLLECTOR_PORT_HTTP}
+    - OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE
+    - OTEL_RESOURCE_ATTRIBUTES=${OTEL_RESOURCE_ATTRIBUTES},service.criticality=medium
+    - OTEL_SERVICE_NAME=email
+    healthcheck:
+      interval: 5s
+      retries: 20
+      start_period: 10s
+      test:
+      - CMD
+      - ruby
+      - -e
+      - require 'socket'; TCPSocket.new('localhost', ${EMAIL_PORT}).close
+      timeout: 5s
+    image: ${IMAGE_NAME}:${DEMO_VERSION}-email
+    logging: *id001
+    restart: unless-stopped
+  flagd:
+    command:
+    - start
+    - --uri
+    - file:./etc/flagd/demo.flagd.json
+    container_name: flagd
+    deploy:
+      resources:
+        limits:
+          memory: 75M
+    environment:
+    - OTEL_EXPORTER_OTLP_ENDPOINT=http://${OTEL_COLLECTOR_HOST}:${OTEL_COLLECTOR_PORT_HTTP}
+    - OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+    - GOMEMLIMIT=60MiB
+    - OTEL_RESOURCE_ATTRIBUTES=${OTEL_RESOURCE_ATTRIBUTES},service.criticality=low
+    - OTEL_SERVICE_NAME=flagd
+    image: ${FLAGD_IMAGE}
+    logging: *id001
+    restart: unless-stopped
+    volumes:
+    - ./src/flagd:/etc/flagd
+  flagd-ui:
+    build:
+      cache_from:
+      - ${IMAGE_NAME}:${IMAGE_VERSION}-flagd-ui
+      context: ./
+      dockerfile: ${FLAGD_UI_DOCKERFILE}
+    container_name: flagd-ui
+    depends_on:
+      flagd:
+        condition: service_started
+      otel-collector:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 200M
+    environment:
+    - FLAGD_UI_PORT
+    - OTEL_EXPORTER_OTLP_ENDPOINT=http://${OTEL_COLLECTOR_HOST}:${OTEL_COLLECTOR_PORT_HTTP}
+    - OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE
+    - OTEL_RESOURCE_ATTRIBUTES=${OTEL_RESOURCE_ATTRIBUTES},service.criticality=low
+    - OTEL_SERVICE_NAME=flagd-ui
+    - SECRET_KEY_BASE=yYrECL4qbNwleYInGJYvVnSkwJuSQJ4ijPTx5tirGUXrbznFIBFVJdPl5t6O9ASw
+    - PHX_HOST=localhost
+    healthcheck:
+      interval: 5s
+      retries: 20
+      start_period: 10s
+      test:
+      - CMD
+      - bash
+      - -c
+      - echo > /dev/tcp/localhost/${FLAGD_UI_PORT}
+      timeout: 5s
+    image: ${IMAGE_NAME}:${DEMO_VERSION}-flagd-ui
+    restart: always
+    volumes:
+    - ./src/flagd:/app/data
+  frontend:
+    build:
+      cache_from:
+      - ${IMAGE_NAME}:${IMAGE_VERSION}-frontend
+      context: ./
+      dockerfile: ${FRONTEND_DOCKERFILE}
+    container_name: frontend
+    depends_on:
+      ad:
+        condition: service_healthy
+      cart:
+        condition: service_started
+      checkout:
+        condition: service_started
+      currency:
+        condition: service_healthy
+      flagd:
+        condition: service_started
+      image-provider:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+      product-catalog:
+        condition: service_started
+      quote:
+        condition: service_healthy
+      recommendation:
+        condition: service_healthy
+      shipping:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 250M
+    environment:
+    - PORT=${FRONTEND_PORT}
+    - FRONTEND_ADDR
+    - AD_ADDR
+    - CART_ADDR
+    - CHECKOUT_ADDR
+    - CURRENCY_ADDR
+    - PRODUCT_CATALOG_ADDR
+    - RECOMMENDATION_ADDR
+    - SHIPPING_ADDR
+    - OTEL_EXPORTER_OTLP_ENDPOINT
+    - OTEL_RESOURCE_ATTRIBUTES=${OTEL_RESOURCE_ATTRIBUTES},service.criticality=critical
+    - ENV_PLATFORM
+    - OTEL_SERVICE_NAME=frontend
+    - PUBLIC_OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
+    - OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE
+    - WEB_OTEL_SERVICE_NAME=frontend-web
+    - OTEL_COLLECTOR_HOST
+    - FLAGD_HOST
+    - FLAGD_PORT
+    healthcheck:
+      interval: 10s
+      retries: 5
+      start_period: 60s
+      test:
+      - CMD
+      - /nodejs/bin/node
+      - -e
+      - require('net').connect(${FRONTEND_PORT},require('os').hostname(),function(){process.exit(0)}).on('error',function(){process.exit(1)})
+      timeout: 10s
+    image: ${IMAGE_NAME}:${DEMO_VERSION}-frontend
+    logging: *id001
+    restart: unless-stopped
+  frontend-proxy:
+    build:
+      cache_from:
+      - ${IMAGE_NAME}:${IMAGE_VERSION}-frontend-proxy
+      context: ./
+      dockerfile: ${FRONTEND_PROXY_DOCKERFILE}
+    container_name: frontend-proxy
+    depends_on:
+      flagd-ui:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
+      telemetry-docs:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 90M
+    dns_search: ''
+    environment:
+    - FRONTEND_PORT
+    - FRONTEND_HOST
+    - GRAFANA_PORT
+    - GRAFANA_HOST
+    - JAEGER_UI_PORT
+    - JAEGER_HOST
+    - OPAMP_SERVER_HOST
+    - OPAMP_SERVER_UI_PORT
+    - OTEL_COLLECTOR_HOST
+    - IMAGE_PROVIDER_HOST
+    - IMAGE_PROVIDER_PORT
+    - OTEL_COLLECTOR_PORT_GRPC
+    - OTEL_COLLECTOR_PORT_HTTP
+    - OTEL_RESOURCE_ATTRIBUTES=${OTEL_RESOURCE_ATTRIBUTES},service.criticality=critical
+    - OTEL_SERVICE_NAME=frontend-proxy
+    - OTEL_SERVICE_NAMESPACE
+    - ENVOY_PORT
+    - ENVOY_ADDR
+    - ENVOY_ADMIN_PORT
+    - FIREPIT_HOST
+    - FIREPIT_PORT
+    - FLAGD_HOST
+    - FLAGD_PORT
+    - FLAGD_UI_HOST
+    - FLAGD_UI_PORT
+    - TELEMETRY_DOCS_HOST
+    - TELEMETRY_DOCS_PORT
+    - CHATBOT_HOST
+    - CHATBOT_PORT
+    healthcheck:
+      interval: 5s
+      retries: 20
+      start_period: 10s
+      test:
+      - CMD
+      - bash
+      - -c
+      - echo > /dev/tcp/localhost/${ENVOY_PORT}
+      timeout: 5s
+    image: ${IMAGE_NAME}:${DEMO_VERSION}-frontend-proxy
+    restart: unless-stopped
+  image-provider:
+    build:
+      cache_from:
+      - ${IMAGE_NAME}:${IMAGE_VERSION}-image-provider
+      context: ./
+      dockerfile: ${IMAGE_PROVIDER_DOCKERFILE}
+    container_name: image-provider
+    depends_on:
+      otel-collector:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 120M
+    environment:
+    - IMAGE_PROVIDER_PORT
+    - OTEL_COLLECTOR_HOST
+    - OTEL_COLLECTOR_PORT_GRPC
+    - OTEL_RESOURCE_ATTRIBUTES=${OTEL_RESOURCE_ATTRIBUTES},service.criticality=low
+    - OTEL_SERVICE_NAME=image-provider
+    healthcheck:
+      interval: 5s
+      retries: 20
+      start_period: 10s
+      test:
+      - CMD
+      - wget
+      - --quiet
+      - --tries=1
+      - --spider
+      - http://localhost:${IMAGE_PROVIDER_PORT}/status
+      timeout: 5s
+    image: ${IMAGE_NAME}:${DEMO_VERSION}-image-provider
+    logging: *id001
+    restart: unless-stopped
+  load-generator:
+    build:
+      cache_from:
+      - ${IMAGE_NAME}:${IMAGE_VERSION}-load-generator
+      context: ./
+      dockerfile: ${LOAD_GENERATOR_DOCKERFILE}
+    container_name: load-generator
+    depends_on:
+      flagd:
+        condition: service_started
+      frontend:
+        condition: service_healthy
+      frontend-proxy:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    environment:
+    - LOAD_GENERATOR_VUS
+    - K6_TARGET_URL
+    - OTEL_EXPORTER_OTLP_ENDPOINT=http://${OTEL_COLLECTOR_HOST}:${OTEL_COLLECTOR_PORT_HTTP}
+    - OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+    - OTEL_RESOURCE_ATTRIBUTES=${OTEL_RESOURCE_ATTRIBUTES},service.criticality=low
+    - OTEL_SERVICE_NAME=load-generator
+    - FLAGD_HOST
+    - FLAGD_PORT
+    - FLAGD_OFREP_PORT
+    - K6_OTEL_EXPORTER_PROTOCOL=http/protobuf
+    - K6_OTEL_HTTP_EXPORTER_ENDPOINT=${OTEL_COLLECTOR_HOST}:${OTEL_COLLECTOR_PORT_HTTP}
+    - K6_OTEL_HTTP_EXPORTER_INSECURE=true
+    - K6_BROWSER_ENABLED=true
+    - K6_BROWSER_ARGS=no-sandbox,disable-dev-shm-usage
+    - K6_OTEL_METRIC_PREFIX=k6.
+    healthcheck:
+      interval: 5s
+      retries: 5
+      start_period: 10s
+      test:
+      - CMD-SHELL
+      - pgrep k6
+      timeout: 5s
+    image: ${IMAGE_NAME}:${DEMO_VERSION}-load-generator
+    logging: *id001
+    restart: unless-stopped
+  otel-collector:
+    command:
+    - --config=/etc/otelcol-config.yml
+    - --config=/etc/otelcol-config-extras.yml
+    - --feature-gates=service.profilesSupport
+    container_name: otel-collector
+    deploy:
+      resources:
+        limits:
+          memory: 400M
+    environment:
+    - AD_PROMETHEUS_PORT
+    - FRONTEND_PROXY_ADDR
+    - HOST_FILESYSTEM
+    - IMAGE_PROVIDER_HOST
+    - IMAGE_PROVIDER_PORT
+    - OTEL_COLLECTOR_HOST
+    - OTEL_COLLECTOR_PORT_GRPC
+    - OTEL_COLLECTOR_PORT_HTTP
+    - POSTGRES_HOST
+    - POSTGRES_PORT
+    - POSTGRES_MONITORING_PASSWORD
+    - GOMEMLIMIT=160MiB
+    image: ${COLLECTOR_CONTRIB_IMAGE}
+    logging: *id001
+    restart: unless-stopped
+    user: 0:0
+    volumes:
+    - ${HOST_FILESYSTEM}:/hostfs:ro
+    - ${DOCKER_SOCK}:/var/run/docker.sock:ro
+    - ${OTEL_COLLECTOR_CONFIG}:/etc/otelcol-config.yml
+    - ${OTEL_COLLECTOR_CONFIG_EXTRAS}:/etc/otelcol-config-extras.yml
+  payment:
+    build:
+      cache_from:
+      - ${IMAGE_NAME}:${IMAGE_VERSION}-payment
+      context: ./
+      dockerfile: ${PAYMENT_DOCKERFILE}
+    container_name: payment
+    depends_on:
+      flagd:
+        condition: service_started
+      otel-collector:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 140M
+    environment:
+    - IPV6_ENABLED
+    - PAYMENT_PORT
+    - FLAGD_HOST
+    - FLAGD_PORT
+    - NODE_OPTIONS=--require @opentelemetry/auto-instrumentations-node/register
+    - OTEL_EXPORTER_OTLP_ENDPOINT
+    - OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE
+    - OTEL_EXPORTER_OTLP_PROTOCOL=grpc
+    - OTEL_RESOURCE_ATTRIBUTES=${OTEL_RESOURCE_ATTRIBUTES},service.criticality=critical
+    - OTEL_SERVICE_NAME=payment
+    healthcheck:
+      interval: 5s
+      retries: 20
+      start_period: 10s
+      test:
+      - CMD
+      - /nodejs/bin/node
+      - -e
+      - const net=require('net');const c=new net.Socket(); c.setTimeout(2000); c.connect(${PAYMENT_PORT},'127.0.0.1',()=>{c.destroy();process.exit(0)});
+        c.on('error',()=>process.exit(1)); c.on('timeout',()=>process.exit(1))
+      timeout: 5s
+    image: ${IMAGE_NAME}:${DEMO_VERSION}-payment
+    logging: *id001
+    restart: unless-stopped
+  product-catalog:
+    build:
+      cache_from:
+      - ${IMAGE_NAME}:${IMAGE_VERSION}-product-catalog
+      context: ./
+      dockerfile: ${PRODUCT_CATALOG_DOCKERFILE}
+    container_name: product-catalog
+    depends_on:
+      astronomy-db:
+        condition: service_healthy
+      flagd:
+        condition: service_started
+      otel-collector:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 20M
+    environment:
+    - PRODUCT_CATALOG_PORT
+    - FLAGD_HOST
+    - FLAGD_PORT
+    - GOMEMLIMIT=16MiB
+    - OTEL_EXPORTER_OTLP_ENDPOINT
+    - OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE
+    - OTEL_RESOURCE_ATTRIBUTES=${OTEL_RESOURCE_ATTRIBUTES},service.criticality=high
+    - OTEL_SERVICE_NAME=product-catalog
+    - OTEL_CONFIG_FILE=/otel-config.yml
+    - OTEL_SEMCONV_STABILITY_OPT_IN=database
+    - DB_CONNECTION_STRING=postgres://astronomy_user:${POSTGRES_ASTRONOMY_PASSWORD}@${POSTGRES_HOST}/astronomy_db?sslmode=disable
+    healthcheck:
+      interval: 5s
+      retries: 20
+      start_period: 10s
+      test:
+      - CMD
+      - /bin/grpc_health_probe
+      - -addr=:${PRODUCT_CATALOG_PORT}
+      timeout: 5s
+    image: ${IMAGE_NAME}:${DEMO_VERSION}-product-catalog
+    logging: *id001
+    read_only: true
+    restart: unless-stopped
+    tmpfs:
+    - /tmp
+    volumes:
+    - ./otel-config.yml:/otel-config.yml
+  quote:
+    build:
+      cache_from:
+      - ${IMAGE_NAME}:${IMAGE_VERSION}-quote
+      context: ./
+      dockerfile: ${QUOTE_DOCKERFILE}
+    container_name: quote
+    depends_on:
+      otel-collector:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 40M
+    environment:
+    - IPV6_ENABLED
+    - OTEL_EXPORTER_OTLP_ENDPOINT=http://${OTEL_COLLECTOR_HOST}:${OTEL_COLLECTOR_PORT_HTTP}
+    - OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE
+    - OTEL_PHP_AUTOLOAD_ENABLED=true
+    - QUOTE_PORT
+    - OTEL_PHP_INTERNAL_METRICS_ENABLED=true
+    - OTEL_RESOURCE_ATTRIBUTES=${OTEL_RESOURCE_ATTRIBUTES},service.criticality=low
+    - OTEL_SERVICE_NAME=quote
+    healthcheck:
+      interval: 5s
+      retries: 20
+      start_period: 10s
+      test:
+      - CMD
+      - php
+      - -r
+      - fsockopen('localhost', ${QUOTE_PORT}) or die('fail');
+      timeout: 5s
+    image: ${IMAGE_NAME}:${DEMO_VERSION}-quote
+    logging: *id001
+    restart: unless-stopped
+  recommendation:
+    build:
+      cache_from:
+      - ${IMAGE_NAME}:${IMAGE_VERSION}-recommendation
+      context: ./
+      dockerfile: ${RECOMMENDATION_DOCKERFILE}
+    container_name: recommendation
+    depends_on:
+      flagd:
+        condition: service_started
+      otel-collector:
+        condition: service_started
+      product-catalog:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 500M
+    environment:
+    - RECOMMENDATION_PORT
+    - PRODUCT_CATALOG_ADDR
+    - FLAGD_HOST
+    - FLAGD_PORT
+    - OTEL_PYTHON_LOG_CORRELATION=true
+    - OTEL_EXPORTER_OTLP_ENDPOINT
+    - OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE
+    - OTEL_RESOURCE_ATTRIBUTES=${OTEL_RESOURCE_ATTRIBUTES},service.criticality=medium
+    - OTEL_SERVICE_NAME=recommendation
+    - PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
+    healthcheck:
+      interval: 5s
+      retries: 20
+      start_period: 10s
+      test:
+      - CMD-SHELL
+      - nc -z localhost ${RECOMMENDATION_PORT}
+      timeout: 5s
+    image: ${IMAGE_NAME}:${DEMO_VERSION}-recommendation
+    logging: *id001
+    restart: unless-stopped
+  shipping:
+    build:
+      cache_from:
+      - ${IMAGE_NAME}:${IMAGE_VERSION}-shipping
+      context: ./
+      dockerfile: ${SHIPPING_DOCKERFILE}
+    container_name: shipping
+    depends_on:
+      flagd:
+        condition: service_started
+      otel-collector:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 20M
+    environment:
+    - IPV6_ENABLED
+    - SHIPPING_PORT
+    - QUOTE_ADDR
+    - FLAGD_HOST
+    - FLAGD_PORT
+    - OTEL_EXPORTER_OTLP_ENDPOINT=http://${OTEL_COLLECTOR_HOST}:${OTEL_COLLECTOR_PORT_HTTP}
+    - OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+    - OTEL_RESOURCE_ATTRIBUTES=${OTEL_RESOURCE_ATTRIBUTES},service.criticality=high
+    - OTEL_SERVICE_NAME=shipping
+    - OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE
+    healthcheck:
+      interval: 5s
+      retries: 20
+      start_period: 10s
+      test:
+      - CMD
+      - /app/healthcheck
+      timeout: 5s
+    image: ${IMAGE_NAME}:${DEMO_VERSION}-shipping
+    logging: *id001
+    read_only: true
+    restart: unless-stopped
+    tmpfs:
+    - /tmp
+  telemetry-docs:
+    build:
+      cache_from:
+      - ${IMAGE_NAME}:${IMAGE_VERSION}-telemetry-docs
+      context: ./
+      dockerfile: ${TELEMETRY_DOCS_DOCKERFILE}
+    container_name: telemetry-docs
+    deploy:
+      resources:
+        limits:
+          memory: 100M
+    environment:
+    - TELEMETRY_DOCS_PORT
+    - OTEL_COLLECTOR_HOST
+    - OTEL_COLLECTOR_PORT_GRPC
+    - OTEL_SERVICE_NAME=telemetry-docs
+    healthcheck:
+      interval: 5s
+      retries: 20
+      start_period: 10s
+      test:
+      - CMD
+      - wget
+      - --quiet
+      - --tries=1
+      - --spider
+      - http://localhost:${TELEMETRY_DOCS_PORT}/
+      timeout: 5s
+    image: ${IMAGE_NAME}:${DEMO_VERSION}-telemetry-docs
+    logging: *id001
+    restart: unless-stopped
+  valkey-cart:
+    container_name: valkey-cart
+    deploy:
+      resources:
+        limits:
+          memory: 20M
+    healthcheck:
+      interval: 5s
+      retries: 10
+      start_period: 5s
+      test:
+      - CMD-SHELL
+      - valkey-cli ping
+      timeout: 3s
+    image: ${VALKEY_IMAGE}
+    logging: *id001
+    restart: unless-stopped
+    user: valkey
+x-default-logging: *id001

@@ -2,6 +2,8 @@ name: incimin
 
 include:
   - docker/compose.core.yaml
+  - docker/compose.signoz.yaml
+  - docker/compose.otel-demo.yaml
 
 networks:
   incimin:
