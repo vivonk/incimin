@@ -103,7 +103,7 @@ Plans:
 
 **Plans**: TBD
 
-### Phase 4: UI Integration & Demo Choreography
+### Phase 4: UI Integration & Demo Choreography [Completed]
 
 **Goal**: Streamlit chat UI delivers real-time glass-box agent output and chaos injection scripts are deterministic and rehearsed
 **Mode:** mvp
@@ -116,7 +116,10 @@ Plans:
   3. `chaos_inject.py --mode stop` triggers paymentservice ERROR logs visible in SigNoz within 30 seconds; `--recover` restores normal state; both modes are idempotent
   4. Memgraph Lab BFS query is scripted, rehearsed, and executable by the demo operator during the agent's graph traversal step
 
-**Plans**: TBD
+**Plans**: 1/1 plans executed
+
+- [x] 04-PLAN.md
+
 **UI hint**: yes
 
 ### Phase 5: Golden Path Validation
@@ -131,7 +134,9 @@ Plans:
   2. All PITFALLS.md checklist items are verified closed (port collisions, Memgraph persistence, nanosecond timestamps, recursion guard, async event loop, BFS syntax, RAM baseline)
   3. Split-screen demo is rehearsed: Streamlit chat (right) + Memgraph Lab showing topology with the BFS query ready to execute (left)
 
-**Plans**: TBD
+**Plans**: 1/1 plans executed
+
+- [x] 05-PLAN.md
 
 ## Progress
 
@@ -143,5 +148,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 1. Infrastructure Foundation | 4/4 | Complete | 2026-08-05 |
 | 2. Data Plane Initialization | 3/4 | In Progress|  |
 | 3. Agent Core | 1/1 | Complete    | 2026-08-06 |
-| 4. UI Integration & Demo Choreography | 0/? | Not started | - |
-| 5. Golden Path Validation | 0/? | Not started | - |
+| 4. UI Integration & Demo Choreography | 1/1 | Complete    | 2026-08-06 |
+| 5. Golden Path Validation | 1/1 | In Progress|  |
