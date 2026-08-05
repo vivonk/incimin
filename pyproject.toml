@@ -1,0 +1,38 @@
+[project]
+name = "incimin"
+version = "0.1.0"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "langgraph>=1.2.10,<1.3",
+    "langgraph-prebuilt>=1.1.0,<2",
+    "langgraph-checkpoint>=4.1.0,<5",
+    "langchain-core>=1.4.7,<2",
+    "langchain-anthropic>=1.5.0,<2",
+    "gqlalchemy>=1.10.0,<2",
+    "qdrant-client>=1.19.0,<2",
+    "fastembed>=0.8.0,<1",
+    "clickhouse-connect>=1.6.0,<2",
+    "streamlit>=1.61.0,<2",
+    "pydantic>=2.7.4,<3",
+    "pydantic-settings>=2.0,<3",
+    "python-dotenv>=1.0,<2",
+    "numpy>=1.26.4,<2.0",  # HARD PIN — GQLAlchemy 1.10.0 raises ImportError with numpy 2.x
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.24",
+    "langsmith>=0.10.0",
+]
+
+[tool.uv]
+package = false
+# Exclude tensorflow: gqlalchemy 1.10.0 declares it as a non-optional dep on Python 3.12,
+# but only uses it in the TF-GNN code path (not the Bolt ORM we need). The pin causes an
+# unresolvable protobuf conflict: tensorflow==2.16.2 requires protobuf<5 while
+# streamlit==1.61.0 requires protobuf>=5.26.1. Overriding to impossible marker removes
+# tensorflow from the resolution without affecting gqlalchemy's Bolt/Cypher functionality.
+override-dependencies = [
+    "tensorflow ; python_version > '99'",
+]
