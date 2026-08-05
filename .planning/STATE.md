@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-08-05)
 ## Current Position
 
 Phase: 1 of 5 (Infrastructure Foundation)
-Plan: 0 of ? in current phase
-Status: Ready to execute
-Last activity: 2026-08-05 -- Phase 01 planning complete
+Plan: 3 of 4 in current phase
+Status: Executing
+Last activity: 2026-08-05 -- Completed 01-03-PLAN.md
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [████████░░] 75%
 
 ## Performance Metrics
 
@@ -65,6 +65,8 @@ Recent decisions affecting current work:
 - Pre-roadmap: SigNoz over Grafana/Prometheus (SQL interface via ClickHouse)
 - Pre-roadmap: OTel Astronomy Shop as victim app (pre-instrumented, eliminates scope)
 - Pre-roadmap: Streamlit for UI (zero-overhead with st.status glass-box visibility)
+- Phase 1, Plan 03: Ran OTel Demo in minimal mode (20 services, omitting Kafka-dependent services) to respect 14GB RAM budget.
+- Phase 1, Plan 03: Dropped demo's built-in Jaeger, Prometheus, OpenSearch, and Firepit exporters to deduplicate backends in favor of SigNoz.
 
 ### Pending Todos
 
@@ -72,8 +74,6 @@ None yet.
 
 ### Blockers/Concerns
 
-- Phase 1: SigNoz port 8080 collides with OTel demo frontend-proxy — must lock ports before any service starts
-- Phase 1: TELE-03 must resolve `distributed_logs` vs `distributed_logs_v2` ambiguity before Phase 2 telemetry work begins
 - Phase 2: Memgraph volume mount must be confirmed before any seed script runs; restart test is mandatory gate
 
 ## Deferred Items

@@ -7,9 +7,9 @@
 
 ### Infrastructure
 
-- [ ] **INFRA-01**: Docker Compose stack runs all services (OTel Astronomy Shop minimal, SigNoz Foundry, Memgraph MAGE, Qdrant, Streamlit agent) with no manual steps beyond `docker compose up`
-- [ ] **INFRA-02**: Port assignments are collision-free (SigNoz UI on 3301, OTel frontend-proxy on 8090; no two services share a host port)
-- [ ] **INFRA-03**: OTel Astronomy Shop telemetry (traces, logs, metrics from all 14 services) flows to SigNoz/ClickHouse via a custom OTel Collector pipeline config
+- [x] **INFRA-01**: Docker Compose stack runs all services (OTel Astronomy Shop minimal, SigNoz Foundry, Memgraph MAGE, Qdrant, Streamlit agent) with no manual steps beyond `docker compose up`
+- [x] **INFRA-02**: Port assignments are collision-free (SigNoz UI on 3301, OTel frontend-proxy on 8090; no two services share a host port)
+- [x] **INFRA-03**: OTel Astronomy Shop telemetry (traces, logs, metrics from all 14 services) flows to SigNoz/ClickHouse via a custom OTel Collector pipeline config
 - [ ] **INFRA-04**: Memgraph data persists across container restarts via a named Docker volume
 - [ ] **INFRA-05**: Host memory usage stays within 14GB Docker Desktop allocation (OTel demo in minimal mode)
 
@@ -95,9 +95,9 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| INFRA-01 | Phase 1 | Pending |
-| INFRA-02 | Phase 1 | Pending |
-| INFRA-03 | Phase 1 | Pending |
+| INFRA-01 | Phase 1 | Complete |
+| INFRA-02 | Phase 1 | Complete |
+| INFRA-03 | Phase 1 | Complete |
 | INFRA-04 | Phase 1 | Pending |
 | INFRA-05 | Phase 1 | Pending |
 | TOPO-01 | Phase 2 | Pending |
@@ -128,6 +128,7 @@
 | GOLDEN-03 | Phase 5 | Pending |
 
 **Coverage:**
+
 - v1 requirements: 31 total
 - Mapped to phases: 31
 - Unmapped: 0 ✓

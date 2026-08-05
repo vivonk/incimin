@@ -42,15 +42,15 @@ Decimal phases appear between their surrounding integers in numeric order.
 Plans:
 **Wave 1**
 
-- [ ] 01-01-PLAN.md — Repo scaffold, canonical port ledger, Memgraph MAGE + Lab + Qdrant online with proven restart persistence
+- [x] 01-01-PLAN.md — Repo scaffold, canonical port ledger, Memgraph MAGE + Lab + Qdrant online with proven restart persistence
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 01-02-PLAN.md — SigNoz + ClickHouse deployed via foundryctl, ClickHouse schema ambiguity resolved, OTLP ingress smoke-tested
+- [x] 01-02-PLAN.md — SigNoz + ClickHouse deployed via foundryctl, ClickHouse schema ambiguity resolved, OTLP ingress smoke-tested
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 01-03-PLAN.md — OTel Astronomy Shop minimal mode on 8090, telemetry routed to SigNoz via pipeline-complete collector overlay, project-wide port audit
+- [x] 01-03-PLAN.md — OTel Astronomy Shop minimal mode on 8090, telemetry routed to SigNoz via pipeline-complete collector overlay, project-wide port audit
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
