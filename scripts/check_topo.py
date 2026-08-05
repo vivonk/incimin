@@ -1,11 +1,24 @@
 import sys
+import time
 from gqlalchemy import Memgraph
+
+def get_memgraph_with_retry(host="127.0.0.1", port=7687, retries=10, delay=2):
+    for i in range(retries):
+        try:
+            memgraph = Memgraph(host=host, port=port)
+            memgraph.execute_and_fetch("RETURN 1")
+            return memgraph
+        except Exception:
+            if i < retries - 1:
+                print(f"Waiting for Memgraph... ({i+1}/{retries})")
+                time.sleep(delay)
+            else:
+                raise
 
 def main():
     try:
-        memgraph = Memgraph(host="127.0.0.1", port=7687)
-        # Verify connection
-        memgraph.execute_and_fetch("RETURN 1")
+        memgraph = get_memgraph_with_retry(host="127.0.0.1", port=7687)
+
         
         print("Checking topology...")
         # Check node count
@@ -13,6 +26,10 @@ def main():
         node_count = nodes[0]['count']
         print(f"Node count: {node_count}")
         
+        if node_count != 14:
+            print(f"Expected 14 nodes, found {node_count}")
+            sys.exit(1)
+            
         # Check BFS path from checkout to payment
         bfs_query = """
         MATCH path = (start:Service {name: 'checkout'})-[:DEPENDS_ON *BFS]->(end:Service {name: 'payment'})
