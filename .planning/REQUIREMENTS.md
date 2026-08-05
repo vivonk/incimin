@@ -56,9 +56,9 @@
 
 ### Golden Path
 
-- [ ] **GOLDEN-01**: End-to-end: "Checkout latency is spiking. Investigate and give me a recommendation." → root cause identifies paymentservice → runbook retrieved → recommendation output, in <60 seconds wall clock
-- [ ] **GOLDEN-02**: Memgraph Lab displays the service topology graph; a pre-written BFS Cypher query is scripted and rehearsed for the demo operator to execute during the agent's graph traversal step
-- [ ] **GOLDEN-03**: All PITFALLS.md "looks done but isn't" checklist items verified before demo day
+- [x] **GOLDEN-01**: End-to-end: "Checkout latency is spiking. Investigate and give me a recommendation." → root cause identifies paymentservice → runbook retrieved → recommendation output, in <60 seconds wall clock
+- [x] **GOLDEN-02**: Memgraph Lab displays the service topology graph; a pre-written BFS Cypher query is scripted and rehearsed for the demo operator to execute during the agent's graph traversal step
+- [x] **GOLDEN-03**: All PITFALLS.md "looks done but isn't" checklist items verified before demo day
 
 ## v2 Requirements
 
@@ -123,9 +123,9 @@
 | CHAOS-02 | Phase 4 | Pending |
 | CHAOS-03 | Phase 4 | Pending |
 | CHAOS-04 | Phase 4 | Pending |
-| GOLDEN-01 | Phase 5 | Pending |
-| GOLDEN-02 | Phase 5 | Pending |
-| GOLDEN-03 | Phase 5 | Pending |
+| GOLDEN-01 | Phase 5 | Complete |
+| GOLDEN-02 | Phase 5 | Complete |
+| GOLDEN-03 | Phase 5 | Complete |
 
 **Coverage:**
 
