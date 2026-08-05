@@ -75,7 +75,18 @@ Plans:
   3. ClickHouse log query tool returns ERROR-level logs and trace IDs for paymentservice within a specified time window using nanosecond timestamps
   4. Qdrant `runbooks` collection returns the correct playbook for a given incident description via semantic similarity search (fastembed BAAI/bge-small-en-v1.5, 384-dim verified)
 
-**Plans**: TBD
+**Plans**: 4 plans in 2 waves
+
+Plans:
+**Wave 1**
+
+- [ ] 02-01-PLAN.md — Memgraph Topology Seed & Verify
+- [ ] 02-02-PLAN.md — ClickHouse Telemetry Query & Verify
+- [ ] 02-03-PLAN.md — Qdrant Knowledge Seed & Verify
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 02-04-PLAN.md — Data Plane Verification Gate
 
 ### Phase 3: Agent Core
 
