@@ -1,8 +1,11 @@
 from typing import Dict, Type
 from src.production.topology.plugin import TopologyPlugin
+from src.production.topology.plugins.signoz import SigNozServiceMap
 
 # Explicit dictionary mapping for internal plugin registry
-PLUGINS: Dict[str, Type] = {}
+PLUGINS: Dict[str, Type] = {
+    "signoz": SigNozServiceMap,
+}
 
 
 class TopologyManager:
