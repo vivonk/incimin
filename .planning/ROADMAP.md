@@ -19,19 +19,21 @@
 
 ## Active
 
-- [ ] Phase 07: Core Models and DB Integration
+### Phase 07: Core Models and DB Integration
   - **Requirements:** CORE-01, ADV-01
   - **Success Criteria:**
     - Pydantic models for ServiceNode and ServiceEdge enforce Entity Metadata Principle fields.
     - Dual identity provenance (`external_id` and internal ID) is structurally validated.
     - Pydantic models can be successfully translated to Memgraph Cypher `MERGE` queries.
-- [ ] Phase 08: Core Abstraction Layer and Plugin Registry
+
+### Phase 08: Core Abstraction Layer and Plugin Registry
   - **Requirements:** CORE-02, CORE-03
   - **Success Criteria:**
     - `TopologyPlugin` ABC defines a standard asynchronous `fetch_topology` interface.
     - `TopologyManager` can discover and load internal plugins from configuration.
     - Plugin registry rejects plugins that do not implement the `TopologyPlugin` interface correctly.
-- [ ] Phase 09: SigNoz Plugin MVP Implementation
+
+### Phase 09: SigNoz Plugin MVP Implementation
   - **Requirements:** PLUG-01
   - **Success Criteria:**
     - `SigNozServiceMap` plugin is implemented using `httpx` and `tenacity`.
