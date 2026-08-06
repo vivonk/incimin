@@ -1,13 +1,8 @@
 # incimin.io — AI SRE Agent
 
-## Current Milestone: v1.6 Plugin-based Service Topology
+## Shipped: v1.6 Plugin-based Service Topology (2026-08-07)
 
-**Goal:** Build a plugin-based architecture for service topology integration that allows fetching, standardizing, and persisting topology data from various OTEL providers.
-
-**Target features:**
-- **Core Abstraction Layer:** Responsible for standardizing, storing, and continuously updating the topology graph internally.
-- **SigNoz Plugin (`SigNozServiceMap`):** The first implementation, responsible for fetching topology from the SigNoz API, parsing it into the core format, and providing it to the abstraction layer.
-- **Extensible Architecture:** Designed to easily add future plugins for DataDog, Prometheus, and others.
+3 phases, 3 plans, 10 tasks — extensible plugin architecture with SigNoz integration. See `.planning/milestones/v1.6-ROADMAP.md`.
 
 ## What This Is
 
@@ -31,12 +26,15 @@ When an incident fires, the agent autonomously traverses the live service graph,
 - ✓ Streamlit chat UI rendering real-time tool-call glass-box visibility via `st.status` expanders — v1.5
 - ✓ Memgraph Lab live node-highlighting as agent traverses graph (split-screen visual) — v1.5
 - ✓ Codebase structured for production evolution post-demo (not throwaway) — v1.5
-- ✓ CORE-02: Validated in Phase 08: Core Abstraction Layer and Plugin Registry
-- ✓ CORE-03: Validated in Phase 08: Core Abstraction Layer and Plugin Registry
+- ✓ CORE-02: TopologyPlugin ABC for standard async fetch interface — v1.6
+- ✓ CORE-03: TopologyManager plugin registry with sub-class validation — v1.6
+- ✓ CORE-01: ServiceNode/ServiceEdge Pydantic models with EntityMetadataMixin — v1.6
+- ✓ ADV-01: Dual identity provenance (external_id + deterministic UUID5 internal_id) — v1.6
+- ✓ PLUG-01: SigNozServiceMap fetches topology from SigNoz API, normalized to standard model — v1.6
 
 ### Active
 
-(None yet — planning next milestone)
+(None — start next milestone with `/gsd-new-milestone`)
 
 ### Out of Scope
 
@@ -60,6 +58,8 @@ When an incident fires, the agent autonomously traverses the live service graph,
 
 **Post-demo trajectory:** This codebase becomes the product foundation. Code quality, modularity, and extensibility matter from day one.
 
+**v1.6 state:** Plugin-based topology architecture shipped. `src/production/topology/` contains the full stack: Pydantic models with entity metadata enforcement, TopologyPlugin ABC, TopologyManager registry, and SigNozServiceMap plugin. 855 LOC added across 18 files. 6/6 tests passing.
+
 ## Constraints
 
 - **Timeline:** 3-day / 48-hour build sprint — phases must be parallelizable across 2-3 engineers
@@ -79,6 +79,9 @@ When an incident fires, the agent autonomously traverses the live service graph,
 | Streamlit for UI | Zero-overhead chat UI with `st.status` expanders for glass-box tool visibility; not investing in custom frontend for demo | ✓ Good |
 | Recommendations-only agent (no auto-remediation) | Reduces blast radius risk for enterprise adoption; keeps v1 scope achievable | ✓ Good |
 | Production Codebase Separation | Leave existing demo codebase intact in its current structure; develop production version in a new directory to preserve demo's working state and tests | ✓ Good |
+| Explicit dict registry over entry_points | Plugin discovery via PLUGINS dict is simpler, safer (no dynamic loading), and sufficient for single-org deployment | ✓ Good — v1.6 |
+| UUID5 for internal_id | Deterministic hash of (source, external_id) enables idempotent Memgraph MERGEs without read-before-write | ✓ Good — v1.6 |
+| httpx + tenacity for SigNoz plugin | Async HTTP client with exponential backoff retries; resilient to transient SigNoz API failures | ✓ Good — v1.6 |
 
 ## Evolution
 
@@ -98,4 +101,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-08-06 starting v1.6 milestone*
+*Last updated: 2026-08-07 after v1.6 milestone*
