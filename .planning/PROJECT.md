@@ -67,6 +67,7 @@ When an incident fires, the agent autonomously traverses the live service graph,
 | OTel Astronomy Shop as victim app | Pre-instrumented, multi-service, realistic telemetry — eliminates instrumentation scope from the sprint | ✓ Good |
 | Streamlit for UI | Zero-overhead chat UI with `st.status` expanders for glass-box tool visibility; not investing in custom frontend for demo | ✓ Good |
 | Recommendations-only agent (no auto-remediation) | Reduces blast radius risk for enterprise adoption; keeps v1 scope achievable | ✓ Good |
+| Production Codebase Separation | Leave existing demo codebase intact in its current structure; develop production version in a new directory to preserve demo's working state and tests | ✓ Good |
 
 ## Evolution
 

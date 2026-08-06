@@ -30,6 +30,7 @@ To avoid manual catalog configurations (like `catalog-info.yaml`), the productio
 - **Hybrid Discovery Flow (Production):** Decided against live-querying MCP servers for general discovery during incidents; instead, metadata is aggregated into ClickHouse for fast SQL querying, reserving MCPs for targeted deep-dives.
 - **Recommendations Only:** The agent is scoped to recommend remediations, deliberately omitting auto-remediation execution to reduce blast radius risk for enterprise adoption.
 - **SSL Context Fix:** Implemented a global `ssl` module context bypass in the LLM initialization to gracefully handle corporate proxies and macOS network hangs without breaking `httpx` async timeouts.
+- **Production Codebase Strategy:** Decided to leave the existing demo codebase intact in its current structure. Production development will occur in a new directory, preserving the demo's deployment packages, testing scaffolding, and integration scripts for future reference and regression testing.
 
 ## 5. Requirements Satisfied
 - Built a functional 3-tool LangGraph agent.
