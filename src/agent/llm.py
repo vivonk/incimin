@@ -1,7 +1,22 @@
 import os
-import certifi
+import httpx
+import warnings
 
-os.environ["SSL_CERT_FILE"] = certifi.where()
+# Suppress unverified HTTPS request warnings
+warnings.filterwarnings("ignore", message="Unverified HTTPS request")
+
+# Monkeypatch httpx to disable SSL verification for corporate proxy compatibility
+original_init = httpx.Client.__init__
+def new_init(self, *args, **kwargs):
+    kwargs['verify'] = False
+    original_init(self, *args, **kwargs)
+httpx.Client.__init__ = new_init
+
+original_async_init = httpx.AsyncClient.__init__
+def new_async_init(self, *args, **kwargs):
+    kwargs['verify'] = False
+    original_async_init(self, *args, **kwargs)
+httpx.AsyncClient.__init__ = new_async_init
 
 from dotenv import load_dotenv
 from langchain_anthropic import ChatAnthropic
@@ -37,6 +52,7 @@ def build_llm() -> BaseChatModel:
             ),
             temperature=0,
             max_retries=0,
+            timeout=10.0,
         )
 
     if provider == "gemini":
@@ -49,6 +65,7 @@ def build_llm() -> BaseChatModel:
             ),
             temperature=0,
             max_retries=0,
+            timeout=10.0,
         )
 
     if provider == "openrouter":
@@ -57,6 +74,7 @@ def build_llm() -> BaseChatModel:
             model=os.getenv("OPENROUTER_MODEL", "openrouter/free"),
             temperature=0,
             max_retries=0,
+            timeout=10.0,
         )
 
     supported = ", ".join(SUPPORTED_PROVIDERS)
