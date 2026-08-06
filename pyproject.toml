@@ -19,6 +19,7 @@ dependencies = [
     "numpy>=1.26.4,<2.0",  # HARD PIN — GQLAlchemy 1.10.0 raises ImportError with numpy 2.x
     "langchain-google-genai>=4,<5",
     "starlette<1.4.0",
+    "langchain-openrouter>=0.2.7",
 ]
 
 [dependency-groups]

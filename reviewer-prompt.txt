@@ -1,0 +1,1008 @@
+<files_to_read>
+- .env.example
+- .gitignore
+- .python-version
+- compose.yaml
+- docker/compose.core.yaml
+- docker/compose.otel-demo.yaml
+- docker/compose.signoz.yaml
+- docker/otel-demo/.env
+- docker/otel-demo/.env.base
+- docker/otel-demo/compose.yaml
+- docker/otel-demo/docker-compose.minimal.yml
+- docker/otel-demo/docker-compose.yml
+- docker/otel-demo/otel-config.yml
+- docker/otel-demo/otelcol-config-signoz.yml
+- docker/otel-demo/src/accounting/.dockerignore
+- docker/otel-demo/src/accounting/.gitignore
+- docker/otel-demo/src/accounting/Accounting.csproj
+- docker/otel-demo/src/accounting/Accounting.slnx
+- docker/otel-demo/src/accounting/Consumer.cs
+- docker/otel-demo/src/accounting/Directory.Build.props
+- docker/otel-demo/src/accounting/Directory.Packages.props
+- docker/otel-demo/src/accounting/Dockerfile
+- docker/otel-demo/src/accounting/Entities.cs
+- docker/otel-demo/src/accounting/Helpers.cs
+- docker/otel-demo/src/accounting/Log.cs
+- docker/otel-demo/src/accounting/Program.cs
+- docker/otel-demo/src/accounting/README.md
+- docker/otel-demo/src/ad/.java-version
+- docker/otel-demo/src/ad/build.gradle
+- docker/otel-demo/src/ad/Dockerfile
+- docker/otel-demo/src/ad/gradle/wrapper/gradle-wrapper.jar
+- docker/otel-demo/src/ad/gradle/wrapper/gradle-wrapper.properties
+- docker/otel-demo/src/ad/gradlew
+- docker/otel-demo/src/ad/gradlew.bat
+- docker/otel-demo/src/ad/README.md
+- docker/otel-demo/src/ad/settings.gradle
+- docker/otel-demo/src/ad/src/main/java/oteldemo/AdService.java
+- docker/otel-demo/src/ad/src/main/java/oteldemo/problempattern/CPULoad.java
+- docker/otel-demo/src/ad/src/main/java/oteldemo/problempattern/GarbageCollectionTrigger.java
+- docker/otel-demo/src/ad/src/main/java/oteldemo/problempattern/MemoryUtils.java
+- docker/otel-demo/src/ad/src/main/resources/log4j2.xml
+- docker/otel-demo/src/agent/Dockerfile
+- docker/otel-demo/src/agent/fixtures/vcr_cassettes/azure_gpt-5.5_cassette.yaml
+- docker/otel-demo/src/agent/fixtures/vcr_cassettes/claude-opus-4-7_cassette.yaml
+- docker/otel-demo/src/agent/README.md
+- docker/otel-demo/src/agent/requirements.in
+- docker/otel-demo/src/agent/requirements.txt
+- docker/otel-demo/src/agent/run.py
+- docker/otel-demo/src/agent/src/agents/agents.py
+- docker/otel-demo/src/agent/src/agents/llm.py
+- docker/otel-demo/src/agent/src/agents/mcp_client.py
+- docker/otel-demo/src/agent/src/agents/patch_vcr.py
+- docker/otel-demo/src/cart/cart.slnx
+- docker/otel-demo/src/cart/Directory.Build.props
+- docker/otel-demo/src/cart/Directory.Packages.props
+- docker/otel-demo/src/cart/NuGet.config
+- docker/otel-demo/src/cart/README.md
+- docker/otel-demo/src/cart/src/.dockerignore
+- docker/otel-demo/src/cart/src/appsettings.json
+- docker/otel-demo/src/cart/src/cart.csproj
+- docker/otel-demo/src/cart/src/cartstore/ICartStore.cs
+- docker/otel-demo/src/cart/src/cartstore/ValkeyCartStore.cs
+- docker/otel-demo/src/cart/src/Dockerfile
+- docker/otel-demo/src/cart/src/Log.cs
+- docker/otel-demo/src/cart/src/Program.cs
+- docker/otel-demo/src/cart/src/services/CartService.cs
+- docker/otel-demo/src/cart/src/services/HealthCheckService.cs
+- docker/otel-demo/src/cart/tests/cart.tests.csproj
+- docker/otel-demo/src/cart/tests/CartServiceTests.cs
+- docker/otel-demo/src/chatbot/Dockerfile
+- docker/otel-demo/src/chatbot/README.md
+- docker/otel-demo/src/chatbot/requirements.in
+- docker/otel-demo/src/chatbot/requirements.txt
+- docker/otel-demo/src/chatbot/run.py
+- docker/otel-demo/src/chatbot/src/chat_interface/chat_interface.py
+- docker/otel-demo/src/checkout/Dockerfile
+- docker/otel-demo/src/checkout/flags.json
+- docker/otel-demo/src/checkout/flags/flags_gen.go
+- docker/otel-demo/src/checkout/genproto/Dockerfile
+- docker/otel-demo/src/checkout/genproto/oteldemo/demo_grpc.pb.go
+- docker/otel-demo/src/checkout/genproto/oteldemo/demo.pb.go
+- docker/otel-demo/src/checkout/go.mod
+- docker/otel-demo/src/checkout/go.sum
+- docker/otel-demo/src/checkout/kafka/producer.go
+- docker/otel-demo/src/checkout/main.go
+- docker/otel-demo/src/checkout/money/money_test.go
+- docker/otel-demo/src/checkout/money/money.go
+- docker/otel-demo/src/checkout/README.md
+- docker/otel-demo/src/currency/.dockerignore
+- docker/otel-demo/src/currency/CMakeLists.txt
+- docker/otel-demo/src/currency/Dockerfile
+- docker/otel-demo/src/currency/genproto/CMakeLists.txt
+- docker/otel-demo/src/currency/genproto/Dockerfile
+- docker/otel-demo/src/currency/proto/grpc/health/v1/health.proto
+- docker/otel-demo/src/currency/README.md
+- docker/otel-demo/src/currency/src/logger_common.h
+- docker/otel-demo/src/currency/src/meter_common.h
+- docker/otel-demo/src/currency/src/server.cpp
+- docker/otel-demo/src/currency/src/tracer_common.h
+- docker/otel-demo/src/email/.dockerignore
+- docker/otel-demo/src/email/Dockerfile
+- docker/otel-demo/src/email/email_server.rb
+- docker/otel-demo/src/email/Gemfile
+- docker/otel-demo/src/email/Gemfile.lock
+- docker/otel-demo/src/email/README.md
+- docker/otel-demo/src/email/views/confirmation.erb
+- docker/otel-demo/src/flagd-ui/.dockerignore
+- docker/otel-demo/src/flagd-ui/.formatter.exs
+- docker/otel-demo/src/flagd-ui/.gitignore
+- docker/otel-demo/src/flagd-ui/assets/css/app.css
+- docker/otel-demo/src/flagd-ui/assets/js/app.js
+- docker/otel-demo/src/flagd-ui/assets/vendor/daisyui-theme.js
+- docker/otel-demo/src/flagd-ui/assets/vendor/daisyui.js
+- docker/otel-demo/src/flagd-ui/assets/vendor/heroicons.js
+- docker/otel-demo/src/flagd-ui/assets/vendor/topbar.js
+- docker/otel-demo/src/flagd-ui/config/config.exs
+- docker/otel-demo/src/flagd-ui/config/dev.exs
+- docker/otel-demo/src/flagd-ui/config/prod.exs
+- docker/otel-demo/src/flagd-ui/config/runtime.exs
+- docker/otel-demo/src/flagd-ui/config/test.exs
+- docker/otel-demo/src/flagd-ui/Dockerfile
+- docker/otel-demo/src/flagd-ui/lib/flagd_ui_web.ex
+- docker/otel-demo/src/flagd-ui/lib/flagd_ui_web/components/core_components.ex
+- docker/otel-demo/src/flagd-ui/lib/flagd_ui_web/components/layouts.ex
+- docker/otel-demo/src/flagd-ui/lib/flagd_ui_web/components/layouts/root.html.heex
+- docker/otel-demo/src/flagd-ui/lib/flagd_ui_web/components/navbar.ex
+- docker/otel-demo/src/flagd-ui/lib/flagd_ui_web/controllers/error_html.ex
+- docker/otel-demo/src/flagd-ui/lib/flagd_ui_web/controllers/error_json.ex
+- docker/otel-demo/src/flagd-ui/lib/flagd_ui_web/controllers/feature_controller.ex
+- docker/otel-demo/src/flagd-ui/lib/flagd_ui_web/controllers/page_html.ex
+- docker/otel-demo/src/flagd-ui/lib/flagd_ui_web/endpoint.ex
+- docker/otel-demo/src/flagd-ui/lib/flagd_ui_web/gettext.ex
+- docker/otel-demo/src/flagd-ui/lib/flagd_ui_web/live/advanced_editor.ex
+- docker/otel-demo/src/flagd-ui/lib/flagd_ui_web/live/dashboard.ex
+- docker/otel-demo/src/flagd-ui/lib/flagd_ui_web/router.ex
+- docker/otel-demo/src/flagd-ui/lib/flagd_ui_web/telemetry.ex
+- docker/otel-demo/src/flagd-ui/lib/flagd_ui.ex
+- docker/otel-demo/src/flagd-ui/lib/flagd_ui/application.ex
+- docker/otel-demo/src/flagd-ui/lib/flagd_ui/mailer.ex
+- docker/otel-demo/src/flagd-ui/lib/flagd_ui/storage.ex
+- docker/otel-demo/src/flagd-ui/mix.exs
+- docker/otel-demo/src/flagd-ui/mix.lock
+- docker/otel-demo/src/flagd-ui/priv/gettext/en/LC_MESSAGES/errors.po
+- docker/otel-demo/src/flagd-ui/priv/gettext/errors.pot
+- docker/otel-demo/src/flagd-ui/priv/static/favicon.ico
+- docker/otel-demo/src/flagd-ui/priv/static/robots.txt
+- docker/otel-demo/src/flagd-ui/README.md
+- docker/otel-demo/src/flagd-ui/rel/overlays/bin/server
+- docker/otel-demo/src/flagd-ui/rel/overlays/bin/server.bat
+- docker/otel-demo/src/flagd-ui/test/flagd_ui_web/controllers/error_html_test.exs
+- docker/otel-demo/src/flagd-ui/test/flagd_ui_web/controllers/error_json_test.exs
+- docker/otel-demo/src/flagd-ui/test/flagd_ui_web/controllers/feature_controller_test.exs
+- docker/otel-demo/src/flagd-ui/test/flagd_ui_web/controllers/page_controller_test.exs
+- docker/otel-demo/src/flagd-ui/test/flagd_ui_web/live/navbar_test.exs
+- docker/otel-demo/src/flagd-ui/test/flagd_ui/storage_test.exs
+- docker/otel-demo/src/flagd-ui/test/support/conn_case.ex
+- docker/otel-demo/src/flagd-ui/test/test_helper.exs
+- docker/otel-demo/src/flagd/demo.flagd.json
+- docker/otel-demo/src/fraud-detection/.dockerignore
+- docker/otel-demo/src/fraud-detection/build.gradle.kts
+- docker/otel-demo/src/fraud-detection/Dockerfile
+- docker/otel-demo/src/fraud-detection/gradle.properties
+- docker/otel-demo/src/fraud-detection/gradle/wrapper/gradle-wrapper.jar
+- docker/otel-demo/src/fraud-detection/gradle/wrapper/gradle-wrapper.properties
+- docker/otel-demo/src/fraud-detection/gradlew
+- docker/otel-demo/src/fraud-detection/gradlew.bat
+- docker/otel-demo/src/fraud-detection/README.md
+- docker/otel-demo/src/fraud-detection/settings.gradle.kts
+- docker/otel-demo/src/fraud-detection/src/main/kotlin/frauddetection/main.kt
+- docker/otel-demo/src/fraud-detection/src/main/resources/log4j2.xml
+- docker/otel-demo/src/frontend-proxy/Dockerfile
+- docker/otel-demo/src/frontend-proxy/envoy.tmpl.yaml
+- docker/otel-demo/src/frontend-proxy/README.md
+- docker/otel-demo/src/frontend/.dockerignore
+- docker/otel-demo/src/frontend/.eslintrc
+- docker/otel-demo/src/frontend/.prettierignore
+- docker/otel-demo/src/frontend/.prettierrc
+- docker/otel-demo/src/frontend/components/Ad/Ad.styled.ts
+- docker/otel-demo/src/frontend/components/Ad/Ad.tsx
+- docker/otel-demo/src/frontend/components/Ad/index.ts
+- docker/otel-demo/src/frontend/components/Banner/Banner.styled.ts
+- docker/otel-demo/src/frontend/components/Banner/Banner.tsx
+- docker/otel-demo/src/frontend/components/Banner/index.ts
+- docker/otel-demo/src/frontend/components/Button/Button.tsx
+- docker/otel-demo/src/frontend/components/Button/index.ts
+- docker/otel-demo/src/frontend/components/Cart/CartDetail.tsx
+- docker/otel-demo/src/frontend/components/Cart/EmptyCart.tsx
+- docker/otel-demo/src/frontend/components/CartDropdown/CartDropdown.styled.ts
+- docker/otel-demo/src/frontend/components/CartDropdown/CartDropdown.tsx
+- docker/otel-demo/src/frontend/components/CartDropdown/index.ts
+- docker/otel-demo/src/frontend/components/CartIcon/CartIcon.styled.ts
+- docker/otel-demo/src/frontend/components/CartIcon/CartIcon.tsx
+- docker/otel-demo/src/frontend/components/CartIcon/index.ts
+- docker/otel-demo/src/frontend/components/CartItems/CartItem.tsx
+- docker/otel-demo/src/frontend/components/CartItems/CartItems.styled.ts
+- docker/otel-demo/src/frontend/components/CartItems/CartItems.tsx
+- docker/otel-demo/src/frontend/components/CartItems/index.ts
+- docker/otel-demo/src/frontend/components/CheckoutForm/CheckoutForm.styled.ts
+- docker/otel-demo/src/frontend/components/CheckoutForm/CheckoutForm.tsx
+- docker/otel-demo/src/frontend/components/CheckoutForm/index.ts
+- docker/otel-demo/src/frontend/components/CheckoutItem/CheckoutItem.styled.ts
+- docker/otel-demo/src/frontend/components/CheckoutItem/CheckoutItem.tsx
+- docker/otel-demo/src/frontend/components/CheckoutItem/index.ts
+- docker/otel-demo/src/frontend/components/CurrencySwitcher/CurrencySwitcher.styled.ts
+- docker/otel-demo/src/frontend/components/CurrencySwitcher/CurrencySwitcher.tsx
+- docker/otel-demo/src/frontend/components/CurrencySwitcher/index.ts
+- docker/otel-demo/src/frontend/components/Footer/Footer.styled.ts
+- docker/otel-demo/src/frontend/components/Footer/Footer.tsx
+- docker/otel-demo/src/frontend/components/Footer/index.ts
+- docker/otel-demo/src/frontend/components/Header/Header.styled.ts
+- docker/otel-demo/src/frontend/components/Header/Header.tsx
+- docker/otel-demo/src/frontend/components/Header/index.ts
+- docker/otel-demo/src/frontend/components/Input/index.ts
+- docker/otel-demo/src/frontend/components/Input/Input.styled.ts
+- docker/otel-demo/src/frontend/components/Input/Input.tsx
+- docker/otel-demo/src/frontend/components/Layout/index.ts
+- docker/otel-demo/src/frontend/components/Layout/Layout.tsx
+- docker/otel-demo/src/frontend/components/PlatformFlag/index.ts
+- docker/otel-demo/src/frontend/components/PlatformFlag/PlatformFlag.styled.ts
+- docker/otel-demo/src/frontend/components/PlatformFlag/PlatformFlag.tsx
+- docker/otel-demo/src/frontend/components/ProductCard/index.ts
+- docker/otel-demo/src/frontend/components/ProductCard/ProductCard.styled.ts
+- docker/otel-demo/src/frontend/components/ProductCard/ProductCard.tsx
+- docker/otel-demo/src/frontend/components/ProductList/index.ts
+- docker/otel-demo/src/frontend/components/ProductList/ProductList.styled.ts
+- docker/otel-demo/src/frontend/components/ProductList/ProductList.tsx
+- docker/otel-demo/src/frontend/components/ProductPrice/index.ts
+- docker/otel-demo/src/frontend/components/ProductPrice/ProductPrice.tsx
+- docker/otel-demo/src/frontend/components/Recommendations/index.ts
+- docker/otel-demo/src/frontend/components/Recommendations/Recommendations.styled.ts
+- docker/otel-demo/src/frontend/components/Recommendations/Recommendations.tsx
+- docker/otel-demo/src/frontend/components/Select/index.ts
+- docker/otel-demo/src/frontend/components/Select/Select.styled.ts
+- docker/otel-demo/src/frontend/components/Select/Select.tsx
+- docker/otel-demo/src/frontend/cypress.config.ts
+- docker/otel-demo/src/frontend/cypress/e2e/Checkout.cy.ts
+- docker/otel-demo/src/frontend/cypress/e2e/Home.cy.ts
+- docker/otel-demo/src/frontend/cypress/e2e/ProductDetail.cy.ts
+- docker/otel-demo/src/frontend/Dockerfile
+- docker/otel-demo/src/frontend/Dockerfile.cypress
+- docker/otel-demo/src/frontend/gateways/Api.gateway.ts
+- docker/otel-demo/src/frontend/gateways/http/Shipping.gateway.ts
+- docker/otel-demo/src/frontend/gateways/rpc/Ad.gateway.ts
+- docker/otel-demo/src/frontend/gateways/rpc/Cart.gateway.ts
+- docker/otel-demo/src/frontend/gateways/rpc/Checkout.gateway.ts
+- docker/otel-demo/src/frontend/gateways/rpc/Currency.gateway.ts
+- docker/otel-demo/src/frontend/gateways/rpc/ProductCatalog.gateway.ts
+- docker/otel-demo/src/frontend/gateways/rpc/Recommendations.gateway.ts
+- docker/otel-demo/src/frontend/gateways/Session.gateway.ts
+- docker/otel-demo/src/frontend/genproto/Dockerfile
+- docker/otel-demo/src/frontend/next.config.js
+- docker/otel-demo/src/frontend/package-lock.json
+- docker/otel-demo/src/frontend/package.json
+- docker/otel-demo/src/frontend/pages/_app.tsx
+- docker/otel-demo/src/frontend/pages/_document.tsx
+- docker/otel-demo/src/frontend/pages/404.tsx
+- docker/otel-demo/src/frontend/pages/500.tsx
+- docker/otel-demo/src/frontend/pages/api/cart.ts
+- docker/otel-demo/src/frontend/pages/api/checkout.ts
+- docker/otel-demo/src/frontend/pages/api/currency.ts
+- docker/otel-demo/src/frontend/pages/api/data.ts
+- docker/otel-demo/src/frontend/pages/api/products/[productId]/index.ts
+- docker/otel-demo/src/frontend/pages/api/products/index.ts
+- docker/otel-demo/src/frontend/pages/api/recommendations.ts
+- docker/otel-demo/src/frontend/pages/api/shipping.ts
+- docker/otel-demo/src/frontend/pages/cart/checkout/[orderId]/index.tsx
+- docker/otel-demo/src/frontend/pages/cart/index.tsx
+- docker/otel-demo/src/frontend/pages/index.tsx
+- docker/otel-demo/src/frontend/pages/product/[productId]/index.tsx
+- docker/otel-demo/src/frontend/protos/demo.ts
+- docker/otel-demo/src/frontend/providers/Ad.provider.tsx
+- docker/otel-demo/src/frontend/providers/Cart.provider.tsx
+- docker/otel-demo/src/frontend/providers/Currency.provider.tsx
+- docker/otel-demo/src/frontend/public/favicon.ico
+- docker/otel-demo/src/frontend/public/icons/Cart.svg
+- docker/otel-demo/src/frontend/public/icons/CartIcon.svg
+- docker/otel-demo/src/frontend/public/icons/Check.svg
+- docker/otel-demo/src/frontend/public/icons/Chevron.svg
+- docker/otel-demo/src/frontend/README.md
+- docker/otel-demo/src/frontend/services/ProductCatalog.service.ts
+- docker/otel-demo/src/frontend/styles/Cart.styled.ts
+- docker/otel-demo/src/frontend/styles/Checkout.styled.ts
+- docker/otel-demo/src/frontend/styles/Error.styled.ts
+- docker/otel-demo/src/frontend/styles/globals.css
+- docker/otel-demo/src/frontend/styles/Home.styled.ts
+- docker/otel-demo/src/frontend/styles/ProductDetail.styled.ts
+- docker/otel-demo/src/frontend/styles/style.d.ts
+- docker/otel-demo/src/frontend/styles/Theme.ts
+- docker/otel-demo/src/frontend/tsconfig.json
+- docker/otel-demo/src/frontend/types/Cart.ts
+- docker/otel-demo/src/frontend/utils/Cypress.ts
+- docker/otel-demo/src/frontend/utils/enums/AttributeNames.ts
+- docker/otel-demo/src/frontend/utils/enums/CypressFields.ts
+- docker/otel-demo/src/frontend/utils/imageLoader.js
+- docker/otel-demo/src/frontend/utils/Request.ts
+- docker/otel-demo/src/frontend/utils/telemetry/FrontendTracer.ts
+- docker/otel-demo/src/frontend/utils/telemetry/Instrumentation.js
+- docker/otel-demo/src/frontend/utils/telemetry/InstrumentationMiddleware.ts
+- docker/otel-demo/src/frontend/utils/telemetry/SessionIdProcessor.ts
+- docker/otel-demo/src/grafana/grafana.ini
+- docker/otel-demo/src/grafana/provisioning/alerting/cart-service-alerting.yml
+- docker/otel-demo/src/grafana/provisioning/alerting/default-email.yaml
+- docker/otel-demo/src/grafana/provisioning/alerting/opentelemetry-collector-rules.yaml
+- docker/otel-demo/src/grafana/provisioning/dashboards/demo.yaml
+- docker/otel-demo/src/grafana/provisioning/dashboards/demo/apm-dashboard.json
+- docker/otel-demo/src/grafana/provisioning/dashboards/demo/demo-dashboard.json
+- docker/otel-demo/src/grafana/provisioning/dashboards/demo/events-by-name.json
+- docker/otel-demo/src/grafana/provisioning/dashboards/demo/exemplars-dashboard.json
+- docker/otel-demo/src/grafana/provisioning/dashboards/demo/linux-dashboard.json
+- docker/otel-demo/src/grafana/provisioning/dashboards/demo/NGINX-metrics.json
+- docker/otel-demo/src/grafana/provisioning/dashboards/demo/opentelemetry-collector.json
+- docker/otel-demo/src/grafana/provisioning/dashboards/demo/postgresql-dashboard.json
+- docker/otel-demo/src/grafana/provisioning/dashboards/demo/self-observability.json
+- docker/otel-demo/src/grafana/provisioning/dashboards/demo/spanmetrics-dashboard.json
+- docker/otel-demo/src/grafana/provisioning/datasources/default.yaml
+- docker/otel-demo/src/grafana/provisioning/datasources/jaeger.yaml
+- docker/otel-demo/src/grafana/provisioning/datasources/opensearch.yaml
+- docker/otel-demo/src/image-provider/Dockerfile
+- docker/otel-demo/src/image-provider/nginx.conf.template
+- docker/otel-demo/src/image-provider/static/Banner.png
+- docker/otel-demo/src/image-provider/static/opentelemetry-demo-logo.png
+- docker/otel-demo/src/image-provider/static/products/EclipsmartTravelRefractorTelescope.jpg
+- docker/otel-demo/src/image-provider/static/products/LensCleaningKit.jpg
+- docker/otel-demo/src/image-provider/static/products/NationalParkFoundationExplorascope.jpg
+- docker/otel-demo/src/image-provider/static/products/OpticalTubeAssembly.jpg
+- docker/otel-demo/src/image-provider/static/products/RedFlashlight.jpg
+- docker/otel-demo/src/image-provider/static/products/RoofBinoculars.jpg
+- docker/otel-demo/src/image-provider/static/products/SolarFilter.jpg
+- docker/otel-demo/src/image-provider/static/products/SolarSystemColorImager.jpg
+- docker/otel-demo/src/image-provider/static/products/StarsenseExplorer.jpg
+- docker/otel-demo/src/image-provider/static/products/TheCometBook.jpg
+- docker/otel-demo/src/jaeger/config.yml
+- docker/otel-demo/src/jaeger/ui-config.json
+- docker/otel-demo/src/kafka/Dockerfile
+- docker/otel-demo/src/kafka/README.md
+- docker/otel-demo/src/load-generator/Dockerfile
+- docker/otel-demo/src/load-generator/entrypoint.sh
+- docker/otel-demo/src/load-generator/people.json
+- docker/otel-demo/src/load-generator/README.md
+- docker/otel-demo/src/load-generator/script.js
+- docker/otel-demo/src/load-generator/xk6-otel/go.mod
+- docker/otel-demo/src/load-generator/xk6-otel/go.sum
+- docker/otel-demo/src/load-generator/xk6-otel/otel.go
+- docker/otel-demo/src/mcp/Dockerfile
+- docker/otel-demo/src/mcp/README.md
+- docker/otel-demo/src/mcp/requirements.in
+- docker/otel-demo/src/mcp/requirements.txt
+- docker/otel-demo/src/mcp/run.py
+- docker/otel-demo/src/mcp/src/mcp_server/astronomy_shop_mcp_server.py
+- docker/otel-demo/src/opamp-server/Dockerfile
+- docker/otel-demo/src/opamp-server/README.md
+- docker/otel-demo/src/opensearch/Dockerfile
+- docker/otel-demo/src/otel-collector/otelcol-config-extras.yml
+- docker/otel-demo/src/otel-collector/otelcol-config-full.yml
+- docker/otel-demo/src/otel-collector/otelcol-config-observability.yml
+- docker/otel-demo/src/otel-collector/otelcol-config.yml
+- docker/otel-demo/src/otel-collector/otelcol-ebpf-profiling.yml
+- docker/otel-demo/src/payment/.dockerignore
+- docker/otel-demo/src/payment/charge.js
+- docker/otel-demo/src/payment/Dockerfile
+- docker/otel-demo/src/payment/index.js
+- docker/otel-demo/src/payment/logger.js
+- docker/otel-demo/src/payment/package-lock.json
+- docker/otel-demo/src/payment/package.json
+- docker/otel-demo/src/payment/README.md
+- docker/otel-demo/src/postgresql/init.sql
+- docker/otel-demo/src/product-catalog/Dockerfile
+- docker/otel-demo/src/product-catalog/flags.json
+- docker/otel-demo/src/product-catalog/flags/flags_gen.go
+- docker/otel-demo/src/product-catalog/genproto/Dockerfile
+- docker/otel-demo/src/product-catalog/genproto/oteldemo/demo_grpc.pb.go
+- docker/otel-demo/src/product-catalog/genproto/oteldemo/demo.pb.go
+- docker/otel-demo/src/product-catalog/go.mod
+- docker/otel-demo/src/product-catalog/go.sum
+- docker/otel-demo/src/product-catalog/main.go
+- docker/otel-demo/src/product-catalog/README.md
+- docker/otel-demo/src/prometheus/prometheus-config.yaml
+- docker/otel-demo/src/quote/.dockerignore
+- docker/otel-demo/src/quote/.gitignore
+- docker/otel-demo/src/quote/app/dependencies.php
+- docker/otel-demo/src/quote/app/routes.php
+- docker/otel-demo/src/quote/app/settings.php
+- docker/otel-demo/src/quote/composer.json
+- docker/otel-demo/src/quote/Dockerfile
+- docker/otel-demo/src/quote/public/index.php
+- docker/otel-demo/src/quote/README.md
+- docker/otel-demo/src/quote/src/Application/Settings/Settings.php
+- docker/otel-demo/src/quote/src/Application/Settings/SettingsInterface.php
+- docker/otel-demo/src/react-native-app/.dockerignore
+- docker/otel-demo/src/react-native-app/.gitignore
+- docker/otel-demo/src/react-native-app/.ruby-version
+- docker/otel-demo/src/react-native-app/android.Dockerfile
+- docker/otel-demo/src/react-native-app/app.json
+- docker/otel-demo/src/react-native-app/app/_layout.tsx
+- docker/otel-demo/src/react-native-app/app/(tabs)/_layout.tsx
+- docker/otel-demo/src/react-native-app/app/(tabs)/cart.tsx
+- docker/otel-demo/src/react-native-app/app/(tabs)/index.tsx
+- docker/otel-demo/src/react-native-app/app/(tabs)/settings.tsx
+- docker/otel-demo/src/react-native-app/assets/fonts/SpaceMono-Regular.ttf
+- docker/otel-demo/src/react-native-app/assets/images/adaptive-icon.png
+- docker/otel-demo/src/react-native-app/assets/images/favicon.png
+- docker/otel-demo/src/react-native-app/assets/images/icon.png
+- docker/otel-demo/src/react-native-app/assets/images/splash.png
+- docker/otel-demo/src/react-native-app/babel.config.js
+- docker/otel-demo/src/react-native-app/components/CheckoutForm/CheckoutForm.tsx
+- docker/otel-demo/src/react-native-app/components/CheckoutForm/index.ts
+- docker/otel-demo/src/react-native-app/components/EmptyCart/EmptyCart.tsx
+- docker/otel-demo/src/react-native-app/components/EmptyCart/index.ts
+- docker/otel-demo/src/react-native-app/components/Field.tsx
+- docker/otel-demo/src/react-native-app/components/navigation/TabBarIcon.tsx
+- docker/otel-demo/src/react-native-app/components/ProductCard/index.ts
+- docker/otel-demo/src/react-native-app/components/ProductCard/ProductCard.tsx
+- docker/otel-demo/src/react-native-app/components/ProductList/index.ts
+- docker/otel-demo/src/react-native-app/components/ProductList/ProductList.tsx
+- docker/otel-demo/src/react-native-app/components/Setting.tsx
+- docker/otel-demo/src/react-native-app/components/ThemedScrollView.tsx
+- docker/otel-demo/src/react-native-app/components/ThemedText.tsx
+- docker/otel-demo/src/react-native-app/components/ThemedView.tsx
+- docker/otel-demo/src/react-native-app/constants/Colors.ts
+- docker/otel-demo/src/react-native-app/eslint.config.js
+- docker/otel-demo/src/react-native-app/gateways/Api.gateway.ts
+- docker/otel-demo/src/react-native-app/gateways/Session.gateway.ts
+- docker/otel-demo/src/react-native-app/Gemfile
+- docker/otel-demo/src/react-native-app/Gemfile.lock
+- docker/otel-demo/src/react-native-app/hooks/useColorScheme.ts
+- docker/otel-demo/src/react-native-app/hooks/useColorScheme.web.ts
+- docker/otel-demo/src/react-native-app/hooks/useThemeColor.ts
+- docker/otel-demo/src/react-native-app/hooks/useTracer.ts
+- docker/otel-demo/src/react-native-app/metro.config.js
+- docker/otel-demo/src/react-native-app/package-lock.json
+- docker/otel-demo/src/react-native-app/package.json
+- docker/otel-demo/src/react-native-app/protos/demo.ts
+- docker/otel-demo/src/react-native-app/providers/Cart.provider.tsx
+- docker/otel-demo/src/react-native-app/README.md
+- docker/otel-demo/src/react-native-app/tsconfig.json
+- docker/otel-demo/src/react-native-app/types/Cart.ts
+- docker/otel-demo/src/react-native-app/utils/Localhost.ts
+- docker/otel-demo/src/react-native-app/utils/Request.ts
+- docker/otel-demo/src/react-native-app/utils/SessionIdProcessor.ts
+- docker/otel-demo/src/react-native-app/utils/Settings.ts
+- docker/otel-demo/src/recommendation/demo_pb2_grpc.py
+- docker/otel-demo/src/recommendation/demo_pb2.py
+- docker/otel-demo/src/recommendation/Dockerfile
+- docker/otel-demo/src/recommendation/genproto/Dockerfile
+- docker/otel-demo/src/recommendation/genproto/requirements.in
+- docker/otel-demo/src/recommendation/genproto/requirements.txt
+- docker/otel-demo/src/recommendation/logger.py
+- docker/otel-demo/src/recommendation/metrics.py
+- docker/otel-demo/src/recommendation/README.md
+- docker/otel-demo/src/recommendation/recommendation_server.py
+- docker/otel-demo/src/recommendation/requirements.in
+- docker/otel-demo/src/recommendation/requirements.txt
+- docker/otel-demo/src/shared/tools.py
+- docker/otel-demo/src/shipping/.dockerignore
+- docker/otel-demo/src/shipping/Cargo.lock
+- docker/otel-demo/src/shipping/Cargo.toml
+- docker/otel-demo/src/shipping/Dockerfile
+- docker/otel-demo/src/shipping/README.md
+- docker/otel-demo/src/shipping/src/healthcheck.rs
+- docker/otel-demo/src/shipping/src/main.rs
+- docker/otel-demo/src/shipping/src/shipping_service.rs
+- docker/otel-demo/src/shipping/src/shipping_service/quote.rs
+- docker/otel-demo/src/shipping/src/shipping_service/shipping_types.rs
+- docker/otel-demo/src/shipping/src/shipping_service/tracking.rs
+- docker/otel-demo/src/shipping/src/telemetry_conf.rs
+- docker/otel-demo/src/telemetry-docs/.dockerignore
+- docker/otel-demo/src/telemetry-docs/Dockerfile
+- docker/otel-demo/src/telemetry-docs/mkdocs.yml
+- docker/otel-demo/src/telemetry-docs/nginx.conf.template
+- docker/otel-demo/src/telemetry-docs/README.md
+- docker/otel-demo/src/telemetry-docs/requirements.in
+- docker/otel-demo/src/telemetry-docs/requirements.txt
+- docker/otel-demo/src/telemetry-docs/templates/markdown/attribute_macros.j2
+- docker/otel-demo/src/telemetry-docs/templates/markdown/mkdocs_nav.yml.j2
+- docker/otel-demo/src/telemetry-docs/templates/markdown/readme.md.j2
+- docker/otel-demo/src/telemetry-docs/templates/markdown/registry.md.j2
+- docker/otel-demo/src/telemetry-docs/templates/markdown/service.md.j2
+- docker/otel-demo/src/telemetry-docs/templates/markdown/stability.j2
+- docker/otel-demo/src/telemetry-docs/templates/markdown/weaver.yaml
+- docker/signoz/casting.yaml
+- docker/signoz/casting.yaml.lock
+- docker/signoz/pours/deployment/compose.yaml
+- docker/signoz/pours/deployment/ingester/ingester.yaml
+- docker/signoz/pours/deployment/ingester/opamp.yaml
+- docker/signoz/pours/deployment/telemetrykeeper/clickhousekeeper/keeper-0.yaml
+- docker/signoz/pours/deployment/telemetrystore/clickhouse/config-0-0.yaml
+- docker/signoz/pours/deployment/telemetrystore/clickhouse/functions.yaml
+- docs/CLICKHOUSE_SCHEMA.md
+- docs/OTEL_DEMO_SERVICES.md
+- docs/PORTS.md
+- docs/RESOURCE_BASELINE.md
+- pyproject.toml
+- README.md
+- scripts/verify_stack.py
+- uv.lock
+
+</files_to_read>
+
+
+
+<config>
+depth: standard
+phase_dir: /Users/nsarswat/personal/incimin.io/.planning/phases/01-infrastructure-foundation
+review_path: /Users/nsarswat/personal/incimin.io/.planning/phases/01-infrastructure-foundation/01-REVIEW.md
+diff_base: 1d2cdbda8929a1c99d8775a3bcb399725cfe0743^
+files:
+  - .env.example
+  - .gitignore
+  - .python-version
+  - compose.yaml
+  - docker/compose.core.yaml
+  - docker/compose.otel-demo.yaml
+  - docker/compose.signoz.yaml
+  - docker/otel-demo/.env
+  - docker/otel-demo/.env.base
+  - docker/otel-demo/compose.yaml
+  - docker/otel-demo/docker-compose.minimal.yml
+  - docker/otel-demo/docker-compose.yml
+  - docker/otel-demo/otel-config.yml
+  - docker/otel-demo/otelcol-config-signoz.yml
+  - docker/otel-demo/src/accounting/.dockerignore
+  - docker/otel-demo/src/accounting/.gitignore
+  - docker/otel-demo/src/accounting/Accounting.csproj
+  - docker/otel-demo/src/accounting/Accounting.slnx
+  - docker/otel-demo/src/accounting/Consumer.cs
+  - docker/otel-demo/src/accounting/Directory.Build.props
+  - docker/otel-demo/src/accounting/Directory.Packages.props
+  - docker/otel-demo/src/accounting/Dockerfile
+  - docker/otel-demo/src/accounting/Entities.cs
+  - docker/otel-demo/src/accounting/Helpers.cs
+  - docker/otel-demo/src/accounting/Log.cs
+  - docker/otel-demo/src/accounting/Program.cs
+  - docker/otel-demo/src/accounting/README.md
+  - docker/otel-demo/src/ad/.java-version
+  - docker/otel-demo/src/ad/build.gradle
+  - docker/otel-demo/src/ad/Dockerfile
+  - docker/otel-demo/src/ad/gradle/wrapper/gradle-wrapper.jar
+  - docker/otel-demo/src/ad/gradle/wrapper/gradle-wrapper.properties
+  - docker/otel-demo/src/ad/gradlew
+  - docker/otel-demo/src/ad/gradlew.bat
+  - docker/otel-demo/src/ad/README.md
+  - docker/otel-demo/src/ad/settings.gradle
+  - docker/otel-demo/src/ad/src/main/java/oteldemo/AdService.java
+  - docker/otel-demo/src/ad/src/main/java/oteldemo/problempattern/CPULoad.java
+  - docker/otel-demo/src/ad/src/main/java/oteldemo/problempattern/GarbageCollectionTrigger.java
+  - docker/otel-demo/src/ad/src/main/java/oteldemo/problempattern/MemoryUtils.java
+  - docker/otel-demo/src/ad/src/main/resources/log4j2.xml
+  - docker/otel-demo/src/agent/Dockerfile
+  - docker/otel-demo/src/agent/fixtures/vcr_cassettes/azure_gpt-5.5_cassette.yaml
+  - docker/otel-demo/src/agent/fixtures/vcr_cassettes/claude-opus-4-7_cassette.yaml
+  - docker/otel-demo/src/agent/README.md
+  - docker/otel-demo/src/agent/requirements.in
+  - docker/otel-demo/src/agent/requirements.txt
+  - docker/otel-demo/src/agent/run.py
+  - docker/otel-demo/src/agent/src/agents/agents.py
+  - docker/otel-demo/src/agent/src/agents/llm.py
+  - docker/otel-demo/src/agent/src/agents/mcp_client.py
+  - docker/otel-demo/src/agent/src/agents/patch_vcr.py
+  - docker/otel-demo/src/cart/cart.slnx
+  - docker/otel-demo/src/cart/Directory.Build.props
+  - docker/otel-demo/src/cart/Directory.Packages.props
+  - docker/otel-demo/src/cart/NuGet.config
+  - docker/otel-demo/src/cart/README.md
+  - docker/otel-demo/src/cart/src/.dockerignore
+  - docker/otel-demo/src/cart/src/appsettings.json
+  - docker/otel-demo/src/cart/src/cart.csproj
+  - docker/otel-demo/src/cart/src/cartstore/ICartStore.cs
+  - docker/otel-demo/src/cart/src/cartstore/ValkeyCartStore.cs
+  - docker/otel-demo/src/cart/src/Dockerfile
+  - docker/otel-demo/src/cart/src/Log.cs
+  - docker/otel-demo/src/cart/src/Program.cs
+  - docker/otel-demo/src/cart/src/services/CartService.cs
+  - docker/otel-demo/src/cart/src/services/HealthCheckService.cs
+  - docker/otel-demo/src/cart/tests/cart.tests.csproj
+  - docker/otel-demo/src/cart/tests/CartServiceTests.cs
+  - docker/otel-demo/src/chatbot/Dockerfile
+  - docker/otel-demo/src/chatbot/README.md
+  - docker/otel-demo/src/chatbot/requirements.in
+  - docker/otel-demo/src/chatbot/requirements.txt
+  - docker/otel-demo/src/chatbot/run.py
+  - docker/otel-demo/src/chatbot/src/chat_interface/chat_interface.py
+  - docker/otel-demo/src/checkout/Dockerfile
+  - docker/otel-demo/src/checkout/flags.json
+  - docker/otel-demo/src/checkout/flags/flags_gen.go
+  - docker/otel-demo/src/checkout/genproto/Dockerfile
+  - docker/otel-demo/src/checkout/genproto/oteldemo/demo_grpc.pb.go
+  - docker/otel-demo/src/checkout/genproto/oteldemo/demo.pb.go
+  - docker/otel-demo/src/checkout/go.mod
+  - docker/otel-demo/src/checkout/go.sum
+  - docker/otel-demo/src/checkout/kafka/producer.go
+  - docker/otel-demo/src/checkout/main.go
+  - docker/otel-demo/src/checkout/money/money_test.go
+  - docker/otel-demo/src/checkout/money/money.go
+  - docker/otel-demo/src/checkout/README.md
+  - docker/otel-demo/src/currency/.dockerignore
+  - docker/otel-demo/src/currency/CMakeLists.txt
+  - docker/otel-demo/src/currency/Dockerfile
+  - docker/otel-demo/src/currency/genproto/CMakeLists.txt
+  - docker/otel-demo/src/currency/genproto/Dockerfile
+  - docker/otel-demo/src/currency/proto/grpc/health/v1/health.proto
+  - docker/otel-demo/src/currency/README.md
+  - docker/otel-demo/src/currency/src/logger_common.h
+  - docker/otel-demo/src/currency/src/meter_common.h
+  - docker/otel-demo/src/currency/src/server.cpp
+  - docker/otel-demo/src/currency/src/tracer_common.h
+  - docker/otel-demo/src/email/.dockerignore
+  - docker/otel-demo/src/email/Dockerfile
+  - docker/otel-demo/src/email/email_server.rb
+  - docker/otel-demo/src/email/Gemfile
+  - docker/otel-demo/src/email/Gemfile.lock
+  - docker/otel-demo/src/email/README.md
+  - docker/otel-demo/src/email/views/confirmation.erb
+  - docker/otel-demo/src/flagd-ui/.dockerignore
+  - docker/otel-demo/src/flagd-ui/.formatter.exs
+  - docker/otel-demo/src/flagd-ui/.gitignore
+  - docker/otel-demo/src/flagd-ui/assets/css/app.css
+  - docker/otel-demo/src/flagd-ui/assets/js/app.js
+  - docker/otel-demo/src/flagd-ui/assets/vendor/daisyui-theme.js
+  - docker/otel-demo/src/flagd-ui/assets/vendor/daisyui.js
+  - docker/otel-demo/src/flagd-ui/assets/vendor/heroicons.js
+  - docker/otel-demo/src/flagd-ui/assets/vendor/topbar.js
+  - docker/otel-demo/src/flagd-ui/config/config.exs
+  - docker/otel-demo/src/flagd-ui/config/dev.exs
+  - docker/otel-demo/src/flagd-ui/config/prod.exs
+  - docker/otel-demo/src/flagd-ui/config/runtime.exs
+  - docker/otel-demo/src/flagd-ui/config/test.exs
+  - docker/otel-demo/src/flagd-ui/Dockerfile
+  - docker/otel-demo/src/flagd-ui/lib/flagd_ui_web.ex
+  - docker/otel-demo/src/flagd-ui/lib/flagd_ui_web/components/core_components.ex
+  - docker/otel-demo/src/flagd-ui/lib/flagd_ui_web/components/layouts.ex
+  - docker/otel-demo/src/flagd-ui/lib/flagd_ui_web/components/layouts/root.html.heex
+  - docker/otel-demo/src/flagd-ui/lib/flagd_ui_web/components/navbar.ex
+  - docker/otel-demo/src/flagd-ui/lib/flagd_ui_web/controllers/error_html.ex
+  - docker/otel-demo/src/flagd-ui/lib/flagd_ui_web/controllers/error_json.ex
+  - docker/otel-demo/src/flagd-ui/lib/flagd_ui_web/controllers/feature_controller.ex
+  - docker/otel-demo/src/flagd-ui/lib/flagd_ui_web/controllers/page_html.ex
+  - docker/otel-demo/src/flagd-ui/lib/flagd_ui_web/endpoint.ex
+  - docker/otel-demo/src/flagd-ui/lib/flagd_ui_web/gettext.ex
+  - docker/otel-demo/src/flagd-ui/lib/flagd_ui_web/live/advanced_editor.ex
+  - docker/otel-demo/src/flagd-ui/lib/flagd_ui_web/live/dashboard.ex
+  - docker/otel-demo/src/flagd-ui/lib/flagd_ui_web/router.ex
+  - docker/otel-demo/src/flagd-ui/lib/flagd_ui_web/telemetry.ex
+  - docker/otel-demo/src/flagd-ui/lib/flagd_ui.ex
+  - docker/otel-demo/src/flagd-ui/lib/flagd_ui/application.ex
+  - docker/otel-demo/src/flagd-ui/lib/flagd_ui/mailer.ex
+  - docker/otel-demo/src/flagd-ui/lib/flagd_ui/storage.ex
+  - docker/otel-demo/src/flagd-ui/mix.exs
+  - docker/otel-demo/src/flagd-ui/mix.lock
+  - docker/otel-demo/src/flagd-ui/priv/gettext/en/LC_MESSAGES/errors.po
+  - docker/otel-demo/src/flagd-ui/priv/gettext/errors.pot
+  - docker/otel-demo/src/flagd-ui/priv/static/favicon.ico
+  - docker/otel-demo/src/flagd-ui/priv/static/robots.txt
+  - docker/otel-demo/src/flagd-ui/README.md
+  - docker/otel-demo/src/flagd-ui/rel/overlays/bin/server
+  - docker/otel-demo/src/flagd-ui/rel/overlays/bin/server.bat
+  - docker/otel-demo/src/flagd-ui/test/flagd_ui_web/controllers/error_html_test.exs
+  - docker/otel-demo/src/flagd-ui/test/flagd_ui_web/controllers/error_json_test.exs
+  - docker/otel-demo/src/flagd-ui/test/flagd_ui_web/controllers/feature_controller_test.exs
+  - docker/otel-demo/src/flagd-ui/test/flagd_ui_web/controllers/page_controller_test.exs
+  - docker/otel-demo/src/flagd-ui/test/flagd_ui_web/live/navbar_test.exs
+  - docker/otel-demo/src/flagd-ui/test/flagd_ui/storage_test.exs
+  - docker/otel-demo/src/flagd-ui/test/support/conn_case.ex
+  - docker/otel-demo/src/flagd-ui/test/test_helper.exs
+  - docker/otel-demo/src/flagd/demo.flagd.json
+  - docker/otel-demo/src/fraud-detection/.dockerignore
+  - docker/otel-demo/src/fraud-detection/build.gradle.kts
+  - docker/otel-demo/src/fraud-detection/Dockerfile
+  - docker/otel-demo/src/fraud-detection/gradle.properties
+  - docker/otel-demo/src/fraud-detection/gradle/wrapper/gradle-wrapper.jar
+  - docker/otel-demo/src/fraud-detection/gradle/wrapper/gradle-wrapper.properties
+  - docker/otel-demo/src/fraud-detection/gradlew
+  - docker/otel-demo/src/fraud-detection/gradlew.bat
+  - docker/otel-demo/src/fraud-detection/README.md
+  - docker/otel-demo/src/fraud-detection/settings.gradle.kts
+  - docker/otel-demo/src/fraud-detection/src/main/kotlin/frauddetection/main.kt
+  - docker/otel-demo/src/fraud-detection/src/main/resources/log4j2.xml
+  - docker/otel-demo/src/frontend-proxy/Dockerfile
+  - docker/otel-demo/src/frontend-proxy/envoy.tmpl.yaml
+  - docker/otel-demo/src/frontend-proxy/README.md
+  - docker/otel-demo/src/frontend/.dockerignore
+  - docker/otel-demo/src/frontend/.eslintrc
+  - docker/otel-demo/src/frontend/.prettierignore
+  - docker/otel-demo/src/frontend/.prettierrc
+  - docker/otel-demo/src/frontend/components/Ad/Ad.styled.ts
+  - docker/otel-demo/src/frontend/components/Ad/Ad.tsx
+  - docker/otel-demo/src/frontend/components/Ad/index.ts
+  - docker/otel-demo/src/frontend/components/Banner/Banner.styled.ts
+  - docker/otel-demo/src/frontend/components/Banner/Banner.tsx
+  - docker/otel-demo/src/frontend/components/Banner/index.ts
+  - docker/otel-demo/src/frontend/components/Button/Button.tsx
+  - docker/otel-demo/src/frontend/components/Button/index.ts
+  - docker/otel-demo/src/frontend/components/Cart/CartDetail.tsx
+  - docker/otel-demo/src/frontend/components/Cart/EmptyCart.tsx
+  - docker/otel-demo/src/frontend/components/CartDropdown/CartDropdown.styled.ts
+  - docker/otel-demo/src/frontend/components/CartDropdown/CartDropdown.tsx
+  - docker/otel-demo/src/frontend/components/CartDropdown/index.ts
+  - docker/otel-demo/src/frontend/components/CartIcon/CartIcon.styled.ts
+  - docker/otel-demo/src/frontend/components/CartIcon/CartIcon.tsx
+  - docker/otel-demo/src/frontend/components/CartIcon/index.ts
+  - docker/otel-demo/src/frontend/components/CartItems/CartItem.tsx
+  - docker/otel-demo/src/frontend/components/CartItems/CartItems.styled.ts
+  - docker/otel-demo/src/frontend/components/CartItems/CartItems.tsx
+  - docker/otel-demo/src/frontend/components/CartItems/index.ts
+  - docker/otel-demo/src/frontend/components/CheckoutForm/CheckoutForm.styled.ts
+  - docker/otel-demo/src/frontend/components/CheckoutForm/CheckoutForm.tsx
+  - docker/otel-demo/src/frontend/components/CheckoutForm/index.ts
+  - docker/otel-demo/src/frontend/components/CheckoutItem/CheckoutItem.styled.ts
+  - docker/otel-demo/src/frontend/components/CheckoutItem/CheckoutItem.tsx
+  - docker/otel-demo/src/frontend/components/CheckoutItem/index.ts
+  - docker/otel-demo/src/frontend/components/CurrencySwitcher/CurrencySwitcher.styled.ts
+  - docker/otel-demo/src/frontend/components/CurrencySwitcher/CurrencySwitcher.tsx
+  - docker/otel-demo/src/frontend/components/CurrencySwitcher/index.ts
+  - docker/otel-demo/src/frontend/components/Footer/Footer.styled.ts
+  - docker/otel-demo/src/frontend/components/Footer/Footer.tsx
+  - docker/otel-demo/src/frontend/components/Footer/index.ts
+  - docker/otel-demo/src/frontend/components/Header/Header.styled.ts
+  - docker/otel-demo/src/frontend/components/Header/Header.tsx
+  - docker/otel-demo/src/frontend/components/Header/index.ts
+  - docker/otel-demo/src/frontend/components/Input/index.ts
+  - docker/otel-demo/src/frontend/components/Input/Input.styled.ts
+  - docker/otel-demo/src/frontend/components/Input/Input.tsx
+  - docker/otel-demo/src/frontend/components/Layout/index.ts
+  - docker/otel-demo/src/frontend/components/Layout/Layout.tsx
+  - docker/otel-demo/src/frontend/components/PlatformFlag/index.ts
+  - docker/otel-demo/src/frontend/components/PlatformFlag/PlatformFlag.styled.ts
+  - docker/otel-demo/src/frontend/components/PlatformFlag/PlatformFlag.tsx
+  - docker/otel-demo/src/frontend/components/ProductCard/index.ts
+  - docker/otel-demo/src/frontend/components/ProductCard/ProductCard.styled.ts
+  - docker/otel-demo/src/frontend/components/ProductCard/ProductCard.tsx
+  - docker/otel-demo/src/frontend/components/ProductList/index.ts
+  - docker/otel-demo/src/frontend/components/ProductList/ProductList.styled.ts
+  - docker/otel-demo/src/frontend/components/ProductList/ProductList.tsx
+  - docker/otel-demo/src/frontend/components/ProductPrice/index.ts
+  - docker/otel-demo/src/frontend/components/ProductPrice/ProductPrice.tsx
+  - docker/otel-demo/src/frontend/components/Recommendations/index.ts
+  - docker/otel-demo/src/frontend/components/Recommendations/Recommendations.styled.ts
+  - docker/otel-demo/src/frontend/components/Recommendations/Recommendations.tsx
+  - docker/otel-demo/src/frontend/components/Select/index.ts
+  - docker/otel-demo/src/frontend/components/Select/Select.styled.ts
+  - docker/otel-demo/src/frontend/components/Select/Select.tsx
+  - docker/otel-demo/src/frontend/cypress.config.ts
+  - docker/otel-demo/src/frontend/cypress/e2e/Checkout.cy.ts
+  - docker/otel-demo/src/frontend/cypress/e2e/Home.cy.ts
+  - docker/otel-demo/src/frontend/cypress/e2e/ProductDetail.cy.ts
+  - docker/otel-demo/src/frontend/Dockerfile
+  - docker/otel-demo/src/frontend/Dockerfile.cypress
+  - docker/otel-demo/src/frontend/gateways/Api.gateway.ts
+  - docker/otel-demo/src/frontend/gateways/http/Shipping.gateway.ts
+  - docker/otel-demo/src/frontend/gateways/rpc/Ad.gateway.ts
+  - docker/otel-demo/src/frontend/gateways/rpc/Cart.gateway.ts
+  - docker/otel-demo/src/frontend/gateways/rpc/Checkout.gateway.ts
+  - docker/otel-demo/src/frontend/gateways/rpc/Currency.gateway.ts
+  - docker/otel-demo/src/frontend/gateways/rpc/ProductCatalog.gateway.ts
+  - docker/otel-demo/src/frontend/gateways/rpc/Recommendations.gateway.ts
+  - docker/otel-demo/src/frontend/gateways/Session.gateway.ts
+  - docker/otel-demo/src/frontend/genproto/Dockerfile
+  - docker/otel-demo/src/frontend/next.config.js
+  - docker/otel-demo/src/frontend/package-lock.json
+  - docker/otel-demo/src/frontend/package.json
+  - docker/otel-demo/src/frontend/pages/_app.tsx
+  - docker/otel-demo/src/frontend/pages/_document.tsx
+  - docker/otel-demo/src/frontend/pages/404.tsx
+  - docker/otel-demo/src/frontend/pages/500.tsx
+  - docker/otel-demo/src/frontend/pages/api/cart.ts
+  - docker/otel-demo/src/frontend/pages/api/checkout.ts
+  - docker/otel-demo/src/frontend/pages/api/currency.ts
+  - docker/otel-demo/src/frontend/pages/api/data.ts
+  - docker/otel-demo/src/frontend/pages/api/products/[productId]/index.ts
+  - docker/otel-demo/src/frontend/pages/api/products/index.ts
+  - docker/otel-demo/src/frontend/pages/api/recommendations.ts
+  - docker/otel-demo/src/frontend/pages/api/shipping.ts
+  - docker/otel-demo/src/frontend/pages/cart/checkout/[orderId]/index.tsx
+  - docker/otel-demo/src/frontend/pages/cart/index.tsx
+  - docker/otel-demo/src/frontend/pages/index.tsx
+  - docker/otel-demo/src/frontend/pages/product/[productId]/index.tsx
+  - docker/otel-demo/src/frontend/protos/demo.ts
+  - docker/otel-demo/src/frontend/providers/Ad.provider.tsx
+  - docker/otel-demo/src/frontend/providers/Cart.provider.tsx
+  - docker/otel-demo/src/frontend/providers/Currency.provider.tsx
+  - docker/otel-demo/src/frontend/public/favicon.ico
+  - docker/otel-demo/src/frontend/public/icons/Cart.svg
+  - docker/otel-demo/src/frontend/public/icons/CartIcon.svg
+  - docker/otel-demo/src/frontend/public/icons/Check.svg
+  - docker/otel-demo/src/frontend/public/icons/Chevron.svg
+  - docker/otel-demo/src/frontend/README.md
+  - docker/otel-demo/src/frontend/services/ProductCatalog.service.ts
+  - docker/otel-demo/src/frontend/styles/Cart.styled.ts
+  - docker/otel-demo/src/frontend/styles/Checkout.styled.ts
+  - docker/otel-demo/src/frontend/styles/Error.styled.ts
+  - docker/otel-demo/src/frontend/styles/globals.css
+  - docker/otel-demo/src/frontend/styles/Home.styled.ts
+  - docker/otel-demo/src/frontend/styles/ProductDetail.styled.ts
+  - docker/otel-demo/src/frontend/styles/style.d.ts
+  - docker/otel-demo/src/frontend/styles/Theme.ts
+  - docker/otel-demo/src/frontend/tsconfig.json
+  - docker/otel-demo/src/frontend/types/Cart.ts
+  - docker/otel-demo/src/frontend/utils/Cypress.ts
+  - docker/otel-demo/src/frontend/utils/enums/AttributeNames.ts
+  - docker/otel-demo/src/frontend/utils/enums/CypressFields.ts
+  - docker/otel-demo/src/frontend/utils/imageLoader.js
+  - docker/otel-demo/src/frontend/utils/Request.ts
+  - docker/otel-demo/src/frontend/utils/telemetry/FrontendTracer.ts
+  - docker/otel-demo/src/frontend/utils/telemetry/Instrumentation.js
+  - docker/otel-demo/src/frontend/utils/telemetry/InstrumentationMiddleware.ts
+  - docker/otel-demo/src/frontend/utils/telemetry/SessionIdProcessor.ts
+  - docker/otel-demo/src/grafana/grafana.ini
+  - docker/otel-demo/src/grafana/provisioning/alerting/cart-service-alerting.yml
+  - docker/otel-demo/src/grafana/provisioning/alerting/default-email.yaml
+  - docker/otel-demo/src/grafana/provisioning/alerting/opentelemetry-collector-rules.yaml
+  - docker/otel-demo/src/grafana/provisioning/dashboards/demo.yaml
+  - docker/otel-demo/src/grafana/provisioning/dashboards/demo/apm-dashboard.json
+  - docker/otel-demo/src/grafana/provisioning/dashboards/demo/demo-dashboard.json
+  - docker/otel-demo/src/grafana/provisioning/dashboards/demo/events-by-name.json
+  - docker/otel-demo/src/grafana/provisioning/dashboards/demo/exemplars-dashboard.json
+  - docker/otel-demo/src/grafana/provisioning/dashboards/demo/linux-dashboard.json
+  - docker/otel-demo/src/grafana/provisioning/dashboards/demo/NGINX-metrics.json
+  - docker/otel-demo/src/grafana/provisioning/dashboards/demo/opentelemetry-collector.json
+  - docker/otel-demo/src/grafana/provisioning/dashboards/demo/postgresql-dashboard.json
+  - docker/otel-demo/src/grafana/provisioning/dashboards/demo/self-observability.json
+  - docker/otel-demo/src/grafana/provisioning/dashboards/demo/spanmetrics-dashboard.json
+  - docker/otel-demo/src/grafana/provisioning/datasources/default.yaml
+  - docker/otel-demo/src/grafana/provisioning/datasources/jaeger.yaml
+  - docker/otel-demo/src/grafana/provisioning/datasources/opensearch.yaml
+  - docker/otel-demo/src/image-provider/Dockerfile
+  - docker/otel-demo/src/image-provider/nginx.conf.template
+  - docker/otel-demo/src/image-provider/static/Banner.png
+  - docker/otel-demo/src/image-provider/static/opentelemetry-demo-logo.png
+  - docker/otel-demo/src/image-provider/static/products/EclipsmartTravelRefractorTelescope.jpg
+  - docker/otel-demo/src/image-provider/static/products/LensCleaningKit.jpg
+  - docker/otel-demo/src/image-provider/static/products/NationalParkFoundationExplorascope.jpg
+  - docker/otel-demo/src/image-provider/static/products/OpticalTubeAssembly.jpg
+  - docker/otel-demo/src/image-provider/static/products/RedFlashlight.jpg
+  - docker/otel-demo/src/image-provider/static/products/RoofBinoculars.jpg
+  - docker/otel-demo/src/image-provider/static/products/SolarFilter.jpg
+  - docker/otel-demo/src/image-provider/static/products/SolarSystemColorImager.jpg
+  - docker/otel-demo/src/image-provider/static/products/StarsenseExplorer.jpg
+  - docker/otel-demo/src/image-provider/static/products/TheCometBook.jpg
+  - docker/otel-demo/src/jaeger/config.yml
+  - docker/otel-demo/src/jaeger/ui-config.json
+  - docker/otel-demo/src/kafka/Dockerfile
+  - docker/otel-demo/src/kafka/README.md
+  - docker/otel-demo/src/load-generator/Dockerfile
+  - docker/otel-demo/src/load-generator/entrypoint.sh
+  - docker/otel-demo/src/load-generator/people.json
+  - docker/otel-demo/src/load-generator/README.md
+  - docker/otel-demo/src/load-generator/script.js
+  - docker/otel-demo/src/load-generator/xk6-otel/go.mod
+  - docker/otel-demo/src/load-generator/xk6-otel/go.sum
+  - docker/otel-demo/src/load-generator/xk6-otel/otel.go
+  - docker/otel-demo/src/mcp/Dockerfile
+  - docker/otel-demo/src/mcp/README.md
+  - docker/otel-demo/src/mcp/requirements.in
+  - docker/otel-demo/src/mcp/requirements.txt
+  - docker/otel-demo/src/mcp/run.py
+  - docker/otel-demo/src/mcp/src/mcp_server/astronomy_shop_mcp_server.py
+  - docker/otel-demo/src/opamp-server/Dockerfile
+  - docker/otel-demo/src/opamp-server/README.md
+  - docker/otel-demo/src/opensearch/Dockerfile
+  - docker/otel-demo/src/otel-collector/otelcol-config-extras.yml
+  - docker/otel-demo/src/otel-collector/otelcol-config-full.yml
+  - docker/otel-demo/src/otel-collector/otelcol-config-observability.yml
+  - docker/otel-demo/src/otel-collector/otelcol-config.yml
+  - docker/otel-demo/src/otel-collector/otelcol-ebpf-profiling.yml
+  - docker/otel-demo/src/payment/.dockerignore
+  - docker/otel-demo/src/payment/charge.js
+  - docker/otel-demo/src/payment/Dockerfile
+  - docker/otel-demo/src/payment/index.js
+  - docker/otel-demo/src/payment/logger.js
+  - docker/otel-demo/src/payment/package-lock.json
+  - docker/otel-demo/src/payment/package.json
+  - docker/otel-demo/src/payment/README.md
+  - docker/otel-demo/src/postgresql/init.sql
+  - docker/otel-demo/src/product-catalog/Dockerfile
+  - docker/otel-demo/src/product-catalog/flags.json
+  - docker/otel-demo/src/product-catalog/flags/flags_gen.go
+  - docker/otel-demo/src/product-catalog/genproto/Dockerfile
+  - docker/otel-demo/src/product-catalog/genproto/oteldemo/demo_grpc.pb.go
+  - docker/otel-demo/src/product-catalog/genproto/oteldemo/demo.pb.go
+  - docker/otel-demo/src/product-catalog/go.mod
+  - docker/otel-demo/src/product-catalog/go.sum
+  - docker/otel-demo/src/product-catalog/main.go
+  - docker/otel-demo/src/product-catalog/README.md
+  - docker/otel-demo/src/prometheus/prometheus-config.yaml
+  - docker/otel-demo/src/quote/.dockerignore
+  - docker/otel-demo/src/quote/.gitignore
+  - docker/otel-demo/src/quote/app/dependencies.php
+  - docker/otel-demo/src/quote/app/routes.php
+  - docker/otel-demo/src/quote/app/settings.php
+  - docker/otel-demo/src/quote/composer.json
+  - docker/otel-demo/src/quote/Dockerfile
+  - docker/otel-demo/src/quote/public/index.php
+  - docker/otel-demo/src/quote/README.md
+  - docker/otel-demo/src/quote/src/Application/Settings/Settings.php
+  - docker/otel-demo/src/quote/src/Application/Settings/SettingsInterface.php
+  - docker/otel-demo/src/react-native-app/.dockerignore
+  - docker/otel-demo/src/react-native-app/.gitignore
+  - docker/otel-demo/src/react-native-app/.ruby-version
+  - docker/otel-demo/src/react-native-app/android.Dockerfile
+  - docker/otel-demo/src/react-native-app/app.json
+  - docker/otel-demo/src/react-native-app/app/_layout.tsx
+  - docker/otel-demo/src/react-native-app/app/(tabs)/_layout.tsx
+  - docker/otel-demo/src/react-native-app/app/(tabs)/cart.tsx
+  - docker/otel-demo/src/react-native-app/app/(tabs)/index.tsx
+  - docker/otel-demo/src/react-native-app/app/(tabs)/settings.tsx
+  - docker/otel-demo/src/react-native-app/assets/fonts/SpaceMono-Regular.ttf
+  - docker/otel-demo/src/react-native-app/assets/images/adaptive-icon.png
+  - docker/otel-demo/src/react-native-app/assets/images/favicon.png
+  - docker/otel-demo/src/react-native-app/assets/images/icon.png
+  - docker/otel-demo/src/react-native-app/assets/images/splash.png
+  - docker/otel-demo/src/react-native-app/babel.config.js
+  - docker/otel-demo/src/react-native-app/components/CheckoutForm/CheckoutForm.tsx
+  - docker/otel-demo/src/react-native-app/components/CheckoutForm/index.ts
+  - docker/otel-demo/src/react-native-app/components/EmptyCart/EmptyCart.tsx
+  - docker/otel-demo/src/react-native-app/components/EmptyCart/index.ts
+  - docker/otel-demo/src/react-native-app/components/Field.tsx
+  - docker/otel-demo/src/react-native-app/components/navigation/TabBarIcon.tsx
+  - docker/otel-demo/src/react-native-app/components/ProductCard/index.ts
+  - docker/otel-demo/src/react-native-app/components/ProductCard/ProductCard.tsx
+  - docker/otel-demo/src/react-native-app/components/ProductList/index.ts
+  - docker/otel-demo/src/react-native-app/components/ProductList/ProductList.tsx
+  - docker/otel-demo/src/react-native-app/components/Setting.tsx
+  - docker/otel-demo/src/react-native-app/components/ThemedScrollView.tsx
+  - docker/otel-demo/src/react-native-app/components/ThemedText.tsx
+  - docker/otel-demo/src/react-native-app/components/ThemedView.tsx
+  - docker/otel-demo/src/react-native-app/constants/Colors.ts
+  - docker/otel-demo/src/react-native-app/eslint.config.js
+  - docker/otel-demo/src/react-native-app/gateways/Api.gateway.ts
+  - docker/otel-demo/src/react-native-app/gateways/Session.gateway.ts
+  - docker/otel-demo/src/react-native-app/Gemfile
+  - docker/otel-demo/src/react-native-app/Gemfile.lock
+  - docker/otel-demo/src/react-native-app/hooks/useColorScheme.ts
+  - docker/otel-demo/src/react-native-app/hooks/useColorScheme.web.ts
+  - docker/otel-demo/src/react-native-app/hooks/useThemeColor.ts
+  - docker/otel-demo/src/react-native-app/hooks/useTracer.ts
+  - docker/otel-demo/src/react-native-app/metro.config.js
+  - docker/otel-demo/src/react-native-app/package-lock.json
+  - docker/otel-demo/src/react-native-app/package.json
+  - docker/otel-demo/src/react-native-app/protos/demo.ts
+  - docker/otel-demo/src/react-native-app/providers/Cart.provider.tsx
+  - docker/otel-demo/src/react-native-app/README.md
+  - docker/otel-demo/src/react-native-app/tsconfig.json
+  - docker/otel-demo/src/react-native-app/types/Cart.ts
+  - docker/otel-demo/src/react-native-app/utils/Localhost.ts
+  - docker/otel-demo/src/react-native-app/utils/Request.ts
+  - docker/otel-demo/src/react-native-app/utils/SessionIdProcessor.ts
+  - docker/otel-demo/src/react-native-app/utils/Settings.ts
+  - docker/otel-demo/src/recommendation/demo_pb2_grpc.py
+  - docker/otel-demo/src/recommendation/demo_pb2.py
+  - docker/otel-demo/src/recommendation/Dockerfile
+  - docker/otel-demo/src/recommendation/genproto/Dockerfile
+  - docker/otel-demo/src/recommendation/genproto/requirements.in
+  - docker/otel-demo/src/recommendation/genproto/requirements.txt
+  - docker/otel-demo/src/recommendation/logger.py
+  - docker/otel-demo/src/recommendation/metrics.py
+  - docker/otel-demo/src/recommendation/README.md
+  - docker/otel-demo/src/recommendation/recommendation_server.py
+  - docker/otel-demo/src/recommendation/requirements.in
+  - docker/otel-demo/src/recommendation/requirements.txt
+  - docker/otel-demo/src/shared/tools.py
+  - docker/otel-demo/src/shipping/.dockerignore
+  - docker/otel-demo/src/shipping/Cargo.lock
+  - docker/otel-demo/src/shipping/Cargo.toml
+  - docker/otel-demo/src/shipping/Dockerfile
+  - docker/otel-demo/src/shipping/README.md
+  - docker/otel-demo/src/shipping/src/healthcheck.rs
+  - docker/otel-demo/src/shipping/src/main.rs
+  - docker/otel-demo/src/shipping/src/shipping_service.rs
+  - docker/otel-demo/src/shipping/src/shipping_service/quote.rs
+  - docker/otel-demo/src/shipping/src/shipping_service/shipping_types.rs
+  - docker/otel-demo/src/shipping/src/shipping_service/tracking.rs
+  - docker/otel-demo/src/shipping/src/telemetry_conf.rs
+  - docker/otel-demo/src/telemetry-docs/.dockerignore
+  - docker/otel-demo/src/telemetry-docs/Dockerfile
+  - docker/otel-demo/src/telemetry-docs/mkdocs.yml
+  - docker/otel-demo/src/telemetry-docs/nginx.conf.template
+  - docker/otel-demo/src/telemetry-docs/README.md
+  - docker/otel-demo/src/telemetry-docs/requirements.in
+  - docker/otel-demo/src/telemetry-docs/requirements.txt
+  - docker/otel-demo/src/telemetry-docs/templates/markdown/attribute_macros.j2
+  - docker/otel-demo/src/telemetry-docs/templates/markdown/mkdocs_nav.yml.j2
+  - docker/otel-demo/src/telemetry-docs/templates/markdown/readme.md.j2
+  - docker/otel-demo/src/telemetry-docs/templates/markdown/registry.md.j2
+  - docker/otel-demo/src/telemetry-docs/templates/markdown/service.md.j2
+  - docker/otel-demo/src/telemetry-docs/templates/markdown/stability.j2
+  - docker/otel-demo/src/telemetry-docs/templates/markdown/weaver.yaml
+  - docker/signoz/casting.yaml
+  - docker/signoz/casting.yaml.lock
+  - docker/signoz/pours/deployment/compose.yaml
+  - docker/signoz/pours/deployment/ingester/ingester.yaml
+  - docker/signoz/pours/deployment/ingester/opamp.yaml
+  - docker/signoz/pours/deployment/telemetrykeeper/clickhousekeeper/keeper-0.yaml
+  - docker/signoz/pours/deployment/telemetrystore/clickhouse/config-0-0.yaml
+  - docker/signoz/pours/deployment/telemetrystore/clickhouse/functions.yaml
+  - docs/CLICKHOUSE_SCHEMA.md
+  - docs/OTEL_DEMO_SERVICES.md
+  - docs/PORTS.md
+  - docs/RESOURCE_BASELINE.md
+  - pyproject.toml
+  - README.md
+  - scripts/verify_stack.py
+  - uv.lock
+
+</config>
+
+Review the listed source files at standard depth. Write findings to /Users/nsarswat/personal/incimin.io/.planning/phases/01-infrastructure-foundation/01-REVIEW.md.
+Do NOT commit the output — the orchestrator handles that.
+
