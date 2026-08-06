@@ -1,22 +1,12 @@
 import os
-import httpx
+import ssl
 import warnings
 
 # Suppress unverified HTTPS request warnings
 warnings.filterwarnings("ignore", message="Unverified HTTPS request")
 
-# Monkeypatch httpx to disable SSL verification for corporate proxy compatibility
-original_init = httpx.Client.__init__
-def new_init(self, *args, **kwargs):
-    kwargs['verify'] = False
-    original_init(self, *args, **kwargs)
-httpx.Client.__init__ = new_init
-
-original_async_init = httpx.AsyncClient.__init__
-def new_async_init(self, *args, **kwargs):
-    kwargs['verify'] = False
-    original_async_init(self, *args, **kwargs)
-httpx.AsyncClient.__init__ = new_async_init
+# Disable SSL verification globally to support corporate proxies
+ssl.create_default_context = ssl._create_unverified_context
 
 from dotenv import load_dotenv
 from langchain_anthropic import ChatAnthropic
