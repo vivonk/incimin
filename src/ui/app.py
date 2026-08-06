@@ -103,3 +103,27 @@ if prompt := st.chat_input("Ask the AI SRE Agent..."):
                                     st.session_state.messages.append(tool_msg)
                                     with st.status(f"Tool Result: {tool_msg.name}", state="complete"):
                                         st.write(f"Result: {tool_msg.content}")
+                elif node_name == "synthesize":
+                    synthesis = state_update.get("synthesis")
+                    if synthesis is not None:
+                        with st.status("Coordinator: draft synthesis", state="complete"):
+                            st.write(f"root_cause_service: {synthesis.root_cause_service}")
+                            st.write(f"evidence_refs: {synthesis.evidence_refs}")
+                            st.write(f"remediation_runbook_id: {synthesis.remediation_runbook_id}")
+                            st.write(f"confidence: {synthesis.confidence}")
+                elif node_name == "verifier":
+                    vr = state_update.get("verification_result")
+                    if vr is not None:
+                        label = "Verifier: PASSED" if vr.get("passed") else "Verifier: FAILED"
+                        with st.status(label, state="complete"):
+                            st.write(f"failed_checks: {vr.get('failed_checks')}")
+                            st.write(f"detail: {vr.get('detail')}")
+                elif node_name in ("finalize", "graceful_exit"):
+                    messages = state_update.get("messages", [])
+                    if messages:
+                        last_msg = messages[-1]
+                        if isinstance(last_msg, AIMessage):
+                            if not st.session_state.messages or st.session_state.messages[-1] != last_msg:
+                                st.session_state.messages.append(last_msg)
+                                if last_msg.content:
+                                    st.markdown(last_msg.content)

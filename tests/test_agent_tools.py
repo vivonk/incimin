@@ -1,71 +1,95 @@
+"""Tool-wiring tests. LangGraph's ToolNode resolves InjectedToolCallId/InjectedState via a
+graph-task Runtime that only exists once a StateGraph is compiled and invoked (bare
+ToolNode(...).invoke() outside a compiled graph raises ValueError: "Missing required config
+key" for the same reason) — so each test wraps the tool in a minimal one-node graph.
+"""
 import unittest
-from unittest.mock import patch, MagicMock
-from src.agent.tools import graph_bfs_tool, clickhouse_log_tool, qdrant_runbook_tool
+from unittest.mock import patch
 
-class TestAgentTools(unittest.TestCase):
-    @patch("src.agent.tools.neo4j.GraphDatabase.driver")
-    def test_graph_bfs_tool_success(self, mock_driver):
-        mock_session = MagicMock()
-        mock_driver.return_value.session.return_value.__enter__.return_value = mock_session
-        mock_session.run.return_value = [{"path": "ServiceA -> ServiceB"}]
-        
-        result = graph_bfs_tool.invoke({"source": "ServiceA"})
-        self.assertEqual(result, "ServiceA -> ServiceB")
+from langchain_core.messages import AIMessage, ToolMessage
+from langgraph.graph import END, StateGraph
+from langgraph.prebuilt import ToolNode
 
-    @patch("src.agent.tools.neo4j.GraphDatabase.driver")
-    def test_graph_bfs_tool_error(self, mock_driver):
-        mock_driver.side_effect = Exception("DB connection failed")
-        
-        result = graph_bfs_tool.invoke({"source": "ServiceA"})
-        self.assertTrue("Error executing topology query" in result)
+from src.agent.state import SREAgentState
+from src.agent.subagents.knowledge import KnowledgeResult
+from src.agent.subagents.telemetry import TelemetryResult
+from src.agent.subagents.topology import TopologyResult
+from src.agent.tools import knowledge_tool, telemetry_tool, topology_tool
 
-    @patch("src.agent.tools.clickhouse_connect.get_client")
-    def test_clickhouse_log_tool_success(self, mock_get_client):
-        mock_client = MagicMock()
-        mock_get_client.return_value = mock_client
-        
-        mock_result = MagicMock()
-        mock_result.result_rows = [
-            (123456789, "trace-123", "NullPointerException")
-        ]
-        mock_client.query.return_value = mock_result
-        
-        result = clickhouse_log_tool.invoke({"service_name": "paymentservice"})
-        self.assertTrue("NullPointerException" in result)
 
-    @patch("src.agent.tools.clickhouse_connect.get_client")
-    def test_clickhouse_log_tool_error(self, mock_get_client):
-        mock_get_client.side_effect = Exception("CH connection failed")
-        
-        result = clickhouse_log_tool.invoke({"service_name": "paymentservice"})
-        self.assertTrue("Error executing telemetry query" in result)
+def tool_call(name, args, call_id="call-1"):
+    return AIMessage(content="", tool_calls=[{"name": name, "args": args, "id": call_id, "type": "tool_call"}])
 
-    @patch("src.agent.tools.QdrantClient")
-    def test_qdrant_runbook_tool_success(self, mock_qdrant):
-        mock_client = MagicMock()
-        mock_qdrant.return_value = mock_client
-        
-        mock_results = MagicMock()
-        mock_point = MagicMock()
-        mock_point.payload = {"filename": "runbook.md", "content": "restart service"}
-        mock_results.points = [mock_point]
-        mock_client.query_points.return_value = mock_results
-        
-        # we also need to mock fastembed, but let's mock the TextEmbedding init
-        with patch("src.agent.tools.TextEmbedding") as mock_embed:
-            mock_embed_instance = MagicMock()
-            mock_embed.return_value = mock_embed_instance
-            mock_embed_instance.embed.return_value = [MagicMock(tolist=lambda: [0.1, 0.2])]
-            
-            result = qdrant_runbook_tool.invoke({"query": "crash"})
-            self.assertTrue("restart service" in result)
 
-    @patch("src.agent.tools.QdrantClient")
-    def test_qdrant_runbook_tool_error(self, mock_qdrant):
-        mock_qdrant.side_effect = Exception("Qdrant connection failed")
-        
-        result = qdrant_runbook_tool.invoke({"query": "crash"})
-        self.assertTrue("Error executing knowledge query" in result)
+def invoke_single_tool(tool_fn, initial_state):
+    graph = StateGraph(SREAgentState)
+    graph.add_node("tools", ToolNode([tool_fn]))
+    graph.set_entry_point("tools")
+    graph.add_edge("tools", END)
+    return graph.compile().invoke(initial_state)
+
+
+class TestTopologyTool(unittest.TestCase):
+    @patch("src.agent.tools.run_topology_subagent")
+    def test_updates_evidence_and_candidate_services(self, mock_run):
+        mock_run.return_value = TopologyResult(
+            candidate_services=["paymentservice"],
+            evidence=[{"id": "topology-0", "source": "topology", "service": "paymentservice", "summary": "s", "raw": {}, "timestamp": None}],
+            summary="Traversed 1 path(s).",
+        )
+
+        result = invoke_single_tool(
+            topology_tool, {"messages": [tool_call("topology_tool", {"source": "checkoutservice"})]}
+        )
+
+        mock_run.assert_called_once_with("checkoutservice")
+        self.assertEqual(result["candidate_services"], ["paymentservice"])
+        self.assertEqual(len(result["evidence"]), 1)
+        tool_msg = result["messages"][-1]
+        self.assertIsInstance(tool_msg, ToolMessage)
+        self.assertEqual(tool_msg.content, "Traversed 1 path(s).")
+
+
+class TestTelemetryTool(unittest.TestCase):
+    @patch("src.agent.tools.run_telemetry_subagent")
+    def test_reads_candidate_services_from_state(self, mock_run):
+        mock_run.return_value = TelemetryResult(
+            evidence=[{"id": "telemetry-err-0", "source": "telemetry", "service": "paymentservice", "summary": "s", "raw": {}, "timestamp": 1}],
+            summary="Found 1 ERROR log(s).",
+        )
+
+        result = invoke_single_tool(
+            telemetry_tool,
+            {"messages": [tool_call("telemetry_tool", {})], "candidate_services": ["paymentservice"]},
+        )
+
+        mock_run.assert_called_once_with(["paymentservice"], window_mins=30)
+        self.assertEqual(len(result["evidence"]), 1)
+
+    @patch("src.agent.tools.run_telemetry_subagent")
+    def test_defaults_to_empty_candidates_when_topology_has_not_run(self, mock_run):
+        mock_run.return_value = TelemetryResult(summary="No candidate services to investigate.")
+
+        invoke_single_tool(telemetry_tool, {"messages": [tool_call("telemetry_tool", {})]})
+
+        mock_run.assert_called_once_with([], window_mins=30)
+
+
+class TestKnowledgeTool(unittest.TestCase):
+    @patch("src.agent.tools.run_knowledge_subagent")
+    def test_returns_evidence_command(self, mock_run):
+        mock_run.return_value = KnowledgeResult(
+            evidence=[{"id": "knowledge-0", "source": "knowledge", "service": "paymentservice", "summary": "paymentservice_crash.md", "raw": {}, "timestamp": None}],
+            summary="Top match: paymentservice_crash.md (score=0.90).",
+        )
+
+        result = invoke_single_tool(
+            knowledge_tool, {"messages": [tool_call("knowledge_tool", {"query": "payment crash"})]}
+        )
+
+        mock_run.assert_called_once_with("payment crash")
+        self.assertEqual(len(result["evidence"]), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

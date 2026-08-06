@@ -20,6 +20,8 @@ class TestLLMProvider(unittest.TestCase):
                 mock_anthropic.assert_called_once_with(
                     model="claude-3-5-sonnet-20240620",
                     temperature=0,
+                    max_retries=0,
+                    timeout=10.0,
                 )
 
     def test_gemini_provider(self):
@@ -38,6 +40,8 @@ class TestLLMProvider(unittest.TestCase):
                 mock_gemini.assert_called_once_with(
                     model="gemini-test-model",
                     temperature=0,
+                    max_retries=0,
+                    timeout=10.0,
                 )
 
     def test_google_model_takes_precedence_over_gemini_model(self):
@@ -54,6 +58,8 @@ class TestLLMProvider(unittest.TestCase):
                 mock_gemini.assert_called_once_with(
                     model="google-model",
                     temperature=0,
+                    max_retries=0,
+                    timeout=10.0,
                 )
 
     def test_openrouter_provider(self):
@@ -68,6 +74,8 @@ class TestLLMProvider(unittest.TestCase):
                 mock_openrouter.assert_called_once_with(
                     model="openrouter/free",
                     temperature=0,
+                    max_retries=0,
+                    timeout=10.0,
                 )
 
     def test_unsupported_provider_fails_clearly(self):
