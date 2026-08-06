@@ -33,6 +33,10 @@ dev = [
     "pytest-httpx>=0.36.2",
 ]
 
+[tool.pytest.ini_options]
+pythonpath = ["."]
+asyncio_mode = "strict"
+
 [tool.uv]
 package = false
 # Exclude tensorflow: gqlalchemy 1.10.0 declares it as a non-optional dep on Python 3.12,
