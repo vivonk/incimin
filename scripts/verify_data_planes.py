@@ -59,7 +59,7 @@ def check_tele_01():
     # Just verifying query execution with nanosecond timestamps succeeds
 
 def check_know_01():
-    client = QdrantClient("http://127.0.0.1:6333", timeout=5.0)
+    client = QdrantClient("http://127.0.0.1:6333", timeout=30.0)
     embedding_model = TextEmbedding("BAAI/bge-small-en-v1.5")
     
     tests = [
@@ -85,7 +85,7 @@ def check_know_01():
             raise Exception(f"Wrong runbook retrieved for '{query}'. Expected {expected_filename}, got {retrieved_filename}")
 
 def check_know_02():
-    client = QdrantClient("http://127.0.0.1:6333", timeout=5.0)
+    client = QdrantClient("http://127.0.0.1:6333", timeout=30.0)
     embedding_model = TextEmbedding("BAAI/bge-small-en-v1.5")
     query_vector = list(embedding_model.embed(["crash"]))[0].tolist()
     

@@ -1,11 +1,11 @@
 from langgraph.graph import StateGraph, END
-from langchain_anthropic import ChatAnthropic
 from langgraph.prebuilt import ToolNode
 from src.agent.state import SREAgentState
 from src.agent.tools import graph_bfs_tool, clickhouse_log_tool, qdrant_runbook_tool
+from src.agent.llm import build_llm
 from langchain_core.messages import AIMessage
 
-llm = ChatAnthropic(model="claude-3-5-sonnet-20240620", temperature=0)
+llm = build_llm()
 tools = [graph_bfs_tool, clickhouse_log_tool, qdrant_runbook_tool]
 llm_with_tools = llm.bind_tools(tools)
 

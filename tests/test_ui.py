@@ -5,6 +5,12 @@ import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
+# graph.py calls build_llm() at import; allow UI unit tests without real keys.
+if not os.environ.get("ANTHROPIC_API_KEY"):
+    os.environ["ANTHROPIC_API_KEY"] = "test-placeholder"
+if not os.environ.get("GOOGLE_API_KEY"):
+    os.environ["GOOGLE_API_KEY"] = "test-placeholder"
+
 class TestUI(unittest.TestCase):
     @patch('src.ui.app.agent_app')
     def test_run_agent_sync(self, mock_agent_app):
