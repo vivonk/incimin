@@ -55,4 +55,4 @@
 | 6. Production Data Planes | v1.5 | 1/1 | Complete | 2026-08-06 |
 | 07. Core Models and DB Integration | v1.6 | 1/1 | Complete    | 2026-08-06 |
 | 08. Core Abstraction Layer and Plugin Registry | v1.6 | 1/1 | Complete    | 2026-08-06 |
-| 09. SigNoz Plugin MVP Implementation | v1.6 | 1/1 | In Progress|  |
+| 09. SigNoz Plugin MVP Implementation | v1.6 | 1/1 | Complete    | 2026-08-07 |

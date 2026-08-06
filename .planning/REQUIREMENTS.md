@@ -8,7 +8,7 @@
 
 ## Plugins
 
-- [ ] **PLUG-01**: The system must include a SigNoz Plugin (`SigNozServiceMap`) that fetches topology data from the SigNoz API and normalizes it into the standard data model.
+- [x] **PLUG-01**: The system must include a SigNoz Plugin (`SigNozServiceMap`) that fetches topology data from the SigNoz API and normalizes it into the standard data model.
 
 ## Advanced
 
