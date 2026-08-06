@@ -1,141 +1,138 @@
 # Project Research Summary
 
-**Project:** incimin.io — AI SRE Agent
-**Domain:** AIOps / Autonomous Incident Response
-**Researched:** 2026-08-05
+**Project:** incimin.io
+**Domain:** Python Plugin Architecture & API Integration
+**Researched:** 2026-08-06
 **Confidence:** HIGH
 
 ## Executive Summary
 
-incimin is an autonomous AI SRE agent that performs deterministic root-cause analysis by unifying three operational data planes: live service topology (Memgraph graph DB), high-velocity telemetry (SigNoz/ClickHouse), and human operational knowledge (Qdrant vector store). The central architectural insight validated by research is that graph-traversal-based RCA is a genuine differentiation from every competitor (PagerDuty AIOps, Datadog Watchdog, Grafana IRM) — all of which use statistical correlation or LLM inference for topology reasoning. By delegating topology traversal to Cypher BFS and SQL generation to structured tool functions, the agent avoids the hallucination problem that has historically caused enterprise distrust of AI SRE products. The LLM handles only two things: choosing which tool to call and composing the final synthesis — both are low-risk applications of LLM capability.
+We are building a Python plugin architecture to integrate with external observability providers (e.g. SigNoz, DataDog) and ingest service topology data into our Memgraph backend. The recommended approach utilizes a Strategy Pattern with an Object-Oriented Abstract Base Class (ABC) and a simple internal registry, bypassing heavy dynamic loading ecosystems since this is an internal, single-org deployment.
 
-The recommended build approach is a 5-phase sequence gated by infrastructure readiness. The entire three-data-plane architecture must be standing and verified before any agent code is written. The most dangerous failure mode is building the agent against mock or assumed data while leaving the data pipeline integration for the end — when a live demo exposes that the OTel telemetry never reached SigNoz, or Memgraph lost its topology on restart, recovery takes 30+ minutes and is unrecoverable mid-demo. All data plane seeding (Memgraph topology, Qdrant runbooks, ClickHouse telemetry) is parallelizable across a 2-3 person team once Docker Compose is stable, which is the primary mechanism to hit the 48-hour build constraint.
-
-The critical risks are infrastructure-level and well-documented: (1) SigNoz Foundry changed its UI port to 8080, colliding with the OTel demo's frontend-proxy — port assignments must be locked in the Compose file before Day 1 build begins; (2) Memgraph is in-memory by default and requires a Docker volume mount or all topology is lost on container restart; (3) ClickHouse timestamps in SigNoz are nanoseconds, not milliseconds — a wrong constant in the log query tool produces silently empty results; (4) LangGraph's ReAct loop will recurse to the limit if tools return empty results, surfacing a traceback in the Streamlit UI during the live demo if not explicitly guarded. All four are preventable with one-time infrastructure validation gates.
-
----
+The primary risk revolves around leaking provider-specific concepts into the core system and losing data provenance. We mitigate this through strict Canonical Data Models enriched with metadata (`source`, `external_id`, `fetched_at`) fulfilling the backend Entity Metadata Principle. Fully async I/O ensures the core application does not stall during ingestion.
 
 ## Key Findings
 
 ### Recommended Stack
 
-The stack is fully locked by the project constraints and all versions have been verified against live PyPI and Docker Hub APIs as of 2026-08-05. Python 3.12 is the required runtime — Python 3.13 triggers an untested numpy branch in GQLAlchemy. The single most important dependency constraint is the `numpy<2.0` pin: GQLAlchemy 1.10.0 declares `numpy>=1.26.4,<2.0` and will raise `ImportError` at runtime with numpy 2.x installed. The `neo4j` driver must also be locked at `<6.0.0` (5.28.1 is current) because GQLAlchemy depends on the 5.x API.
-
-For the 3-day demo, `fastembed` with `BAAI/bge-small-en-v1.5` (384-dim, ~130MB download) eliminates the OpenAI embedding dependency entirely. The `MemorySaver` LangGraph checkpointer is sufficient for demo — no PostgreSQL needed. SigNoz must be deployed via `foundryctl` (Foundry v0.2.17); the old `deploy/docker-compose.yaml` path is deprecated as of SigNoz v0.130.0.
+Our stack leverages standard Python capabilities augmented with modern, resilient async libraries. 
 
 **Core technologies:**
-- **Python 3.12** — runtime; full ecosystem support, avoids 3.13 lag
-- **LangGraph 1.2.10 + langgraph-prebuilt 1.1.0** — agent state machine; `create_react_agent` + `ToolNode` provide the ReAct loop without manual graph wiring
-- **memgraph/memgraph-mage:3.12.0** — topology plane; single image includes MAGE BFS/DFS Cypher procedures; must NOT use plain `memgraph/memgraph` (missing MAGE)
-- **GQLAlchemy 1.10.0** — Memgraph ORM; pin `numpy<2.0` or import fails at runtime
-- **qdrant/qdrant:v1.19.0 + qdrant-client 1.19.0 + fastembed 0.8.0** — knowledge plane; fastembed handles in-process embedding with no external API call
-- **clickhouse-connect 1.6.0** — telemetry query; official ClickHouse HTTP client with async; never use legacy `clickhouse-driver`
-- **SigNoz Foundry v0.2.17 (signoz v0.135.1)** — observability stack via `foundryctl cast`; ClickHouse pinned at `24.1.2.5`
-- **Streamlit 1.61.0** — demo UI; `st.status` expanders provide glass-box tool-call visibility at zero frontend cost
-- **Pydantic 2.13.4** — state schema validation; LangGraph requires Pydantic v2
+- `typing.Protocol` / `abc.ABC`: Plugin Interface Definition — Structural subtyping or abstract classes without forcing deep inheritance hierarchies. Keeps plugins decoupled.
+- `httpx`: Async HTTP Client — Integrates natively with FastAPI's async event loop.
+- `tenacity`: Retries & Resilience — Wraps `httpx` calls to provider APIs to handle rate limits, timeouts, and transient network errors gracefully.
+- `pydantic`: Data Normalization — Strictly validate and normalize external provider data into the core `TopologyGraph` schema.
 
 ### Expected Features
 
-**Must have (v1 demo and pilot):**
-- Correlated RCA narrative from alert to recommendation — the core product without which nothing else matters
-- Deterministic Memgraph BFS topology traversal — the hallucination-free differentiator; auditable step-by-step
-- Qdrant runbook grounding — elevates output from generic advice to team-specific next action
-- Glass-box tool-call trace UI (`st.status` expanders) — enterprise trust and audit requirement
-- Recommendation-only enforcement — explicit constraint; must be enforced in code, not convention
-- Sub-60-second end-to-end latency — the quantifiable metric that makes value concrete in a demo
+**Must have (table stakes):**
+- Standardized Topology Data Model — Ensures downstream consumers (Memgraph ingestion) have a consistent internal schema.
+- Core Abstraction Layer (ABC) — Ensures standard interaction and outputs across all providers.
+- Simple Plugin Registry — Ability to dynamically load internal plugins via configuration.
+- SigNoz Plugin (`SigNozServiceMap`) — Need at least one working plugin to prove the architecture.
 
-**Should have (v1.x after pilot validation):**
-- Alert deduplication / noise grouping
-- Blast radius estimation (BFS + health join) — natural Memgraph extension, low cost
-- Incident timeline reconstruction — required for post-mortem artifacts
-- Slack/PagerDuty push integration — required when pilot team needs agent output in existing workflow
-- Incident similarity / precedent retrieval — valuable after 3-6 months of history accumulates
+**Should have (competitive):**
+- Dual Identity Provenance — Complete traceability for auditability and debugging (`external_id` + internal ID).
+- Plugin Failure Isolation — Fallbacks and circuit breakers so API timeouts don't crash the core system.
 
 **Defer (v2+):**
-- RBAC / access control — design schema with RBAC hooks from day one even if enforcement defers
-- Predictive anomaly flagging — defer until reactive RCA is trusted
-- Multi-tenant SaaS — strategic post-PMF decision
-- Automated remediation execution — only after ITIL/CAB change management integration is designed
-
-**Hard anti-features (never build):**
-- LLM-inferred service topology — hallucinated dependencies cause catastrophic RCA errors
-- Alert suppression without explicit reasoning
-- Replacement observability dashboard
+- DataDog / Prometheus Plugins
+- External Plugin Ecosystem (`entry_points`) — Unnecessary overhead for single-org.
+- Automated Dependency Inference (LLM) — Banned due to hallucination risks.
 
 ### Architecture Approach
 
-The architecture follows a strict four-layer design: Presentation (Streamlit + Memgraph Lab), Agent Orchestration (LangGraph StateGraph ReAct loop), Data Plane (three-plane separation: topology/telemetry/knowledge), and Telemetry Ingestion (SigNoz OTel Collector from OTel Astronomy Shop). The critical structural rule is tool isolation: each of the three tools touches exactly one data store. The LLM selects which tool to call and passes string parameters; all query construction is programmatic inside tool functions. This is the architectural mechanism that delivers the hallucination-free guarantee.
+The architecture isolates external integration details from core domain logic using a Strategy Pattern.
 
 **Major components:**
-1. **LangGraph StateGraph** — `SREAgentState` TypedDict with `add_messages` reducer + typed `IncidentContext`; `recursion_limit=10`; sync `.stream(stream_mode="updates")` for Streamlit
-2. **graph_bfs_tool** — Memgraph Cypher BFS using `[*BFS]` syntax (NOT Neo4j `shortestPath()`); programmatic Cypher from service name string
-3. **clickhouse_log_tool** — parameterized SQL against `signoz_logs.distributed_logs` with nanosecond timestamps (`int(time.time() * 1e9)`)
-4. **qdrant_tool** — semantic search over `runbooks` collection with payload metadata filtering; fastembed in-process embedding
-5. **Streamlit app** — sync `graph.stream()` for-loop with `st.status` expanders; never `.astream()` (event loop conflict)
-6. **Docker Compose stack** — explicit version tags; named volume for Memgraph persistence; port audit pre-Day 1
+1. `TopologyManager` — Orchestrates fetching from plugins and handles background syncing tasks.
+2. `PluginInterface` (ABC) — Defines the standard contract (`fetch_topology()`) for fetching topology data asynchronously.
+3. Canonical Data Models — Pydantic models representing standard service nodes and edges, carrying mandatory metadata (`source`, `external_id`, etc.).
+4. `db.py` (Data Access Layer) — Translates canonical models into async Memgraph Cypher `MERGE` queries.
 
 ### Critical Pitfalls
 
-1. **SigNoz port 8080 collision with OTel demo frontend** — assign SigNoz UI to 3301, OTel `ENVOY_PORT` to 8090; run `docker ps` port audit as Phase 1 gate before any other work
-
-2. **OTel telemetry does not flow to SigNoz without explicit pipeline config** — OTel Collector config arrays REPLACE on overlay (not append); create custom `otelcol-config-signoz.yml` re-declaring all pipeline exporters plus `otlp_grpc/signoz`; verify SigNoz Services page shows 14 services before Phase 2
-
-3. **Memgraph loses all topology on container restart** — add `volumes: - memgraph_data:/var/lib/memgraph` from day one; seed script must use `MERGE` not `CREATE`
-
-4. **ClickHouse timestamps are nanoseconds, not milliseconds** — use `int(time.time() * 1e9)` in all time range filters; unit test that last-5-minute query returns rows against live ClickHouse
-
-5. **LangGraph recursion loop on empty tool results** — `recursion_limit=10` at graph compile; `RemainingSteps` guard node routing to "insufficient data" when `remaining_steps <= 2`; wrap in `try/except GraphRecursionError`
-
-6. **Streamlit async event loop destroyed between requests** — sync `.stream()` only with `@st.cache_resource`; validate 3+ consecutive queries before declaring UI complete
-
-7. **Memgraph BFS syntax differs from Neo4j** — `[*BFS]` not `shortestPath()`; all Cypher strings must be static pre-written, never LLM-generated
-
-8. **Stack RAM approaches 16GB** — OTel demo minimal mode; 14GB Docker Desktop allocation; validate on demo machine before Day 1
-
----
+1. **Leaking Provider-Specific Concepts into Core** — Avoid by defining a strict, provider-agnostic internal Domain Model. Core must never import plugin-specific types.
+2. **Missing Provenance / Bare External Payloads** — Avoid by strictly adhering to the Entity Metadata Principle. Require `source`, `external_id`, `fetched_at`, `schema_version`.
+3. **Blocking I/O in the Ingestion Pipeline** — Avoid by using fully async HTTP requests (`httpx`) and explicit timeouts.
+4. **Silent Failures on Provider Rate Limits** — Avoid by throwing specific custom exceptions and maintaining the last known good graph state instead of wiping.
 
 ## Implications for Roadmap
 
-### Phase 1: Infrastructure Foundation
-**Rationale:** Port collision, missing telemetry pipeline, Memgraph without persistence, and RAM overcommit are all Phase 1 failures with no in-sprint recovery path. Zero code is written until all verification gates pass.
-**Delivers:** Full Compose stack running; 14 OTel demo services sending telemetry to SigNoz; Memgraph and Qdrant reachable with persistent storage; port audit clean; memory baseline within limits.
-**Verification gate:** SigNoz Services page shows all 14 services; `MATCH (n) RETURN count(n)` after `docker compose restart memgraph` returns 14; `docker ps` shows no port conflicts; `docker stats` shows no OOM kills.
+Based on research, suggested phase structure:
 
-### Phase 2: Data Plane Initialization (Parallel Tracks)
-**Rationale:** All three data planes must be independently seeded and verified before any end-to-end agent testing. These tracks are independent and run simultaneously across the team.
-**Delivers:** Memgraph: 14 nodes + edges, BFS smoke-tested with `[*BFS]` syntax. Qdrant: `runbooks` collection hydrated (≥3 runbooks, 384-dim fastembed, semantic search verified). ClickHouse: nanosecond timestamp arithmetic validated, ERROR log rows confirmed for paymentservice.
+### Phase 1: Canonical Models
+**Rationale:** The critical foundation to enforce the Entity Metadata Principle and ensure no provider concepts leak into core.
+**Delivers:** `ServiceNode` and `ServiceEdge` Pydantic models in `topology/models.py`.
+**Addresses:** Standardized Topology Data Model.
+**Avoids:** Missing Provenance, Leaking Provider Concepts.
 
-### Phase 3: Agent Core
-**Delivers:** `SREAgentState` TypedDict; three `@tool` decorated functions; `StateGraph` with `recursion_limit=10` and `RemainingSteps` guard; unit tests for all three tools with mock clients.
+### Phase 2: Plugin Interface & Registry
+**Rationale:** Establishes the contract for all providers and the manager that orchestrates them.
+**Delivers:** `TopologyPlugin` ABC and `TopologyManager` in `topology/plugins/base.py` and `topology/manager.py`.
+**Uses:** `abc.ABC`, `pydantic`.
+**Implements:** Core Abstraction Layer and Dynamic Plugin Registry.
+**Avoids:** Hardcoding Provider Logic in the Manager.
 
-### Phase 4: UI Integration and Demo Choreography
-**Delivers:** `ui/app.py` with sync `graph.stream()` for-loop and `st.status` expanders; multi-turn validated (3+ consecutive queries); `chaos_inject.py`; Memgraph Lab BFS query scripted and rehearsed.
+### Phase 3: Data Access Layer (DB Integration)
+**Rationale:** Required to ingest the canonical models with proper provenance into Memgraph.
+**Delivers:** Async Cypher `MERGE` query functions for topology in `db.py`.
+**Implements:** Data Store Layer (Memgraph).
 
-### Phase 5: Golden Path Validation
-**Delivers:** Full golden path demo runnable; all PITFALLS.md checklist items verified; demo script written including the Memgraph Lab manual query step; <60s latency confirmed.
+### Phase 4: SigNoz Plugin MVP
+**Rationale:** Proves the architecture and provides the first real implementation for extracting topology.
+**Delivers:** Concrete `SigNozPlugin` fetching data in `topology/plugins/signoz.py`.
+**Uses:** `httpx`, `tenacity`.
+**Addresses:** SigNoz Plugin MVP.
+**Avoids:** Blocking I/O, Silent Failures on Provider Rate Limits.
 
----
+### Phase 5: API Integration & Orchestration
+**Rationale:** Wires the pipeline to be executable via FastAPI endpoints or background tasks.
+**Delivers:** `/api/v1/topology/sync` endpoint or equivalent startup trigger in `main.py`.
 
-## Research Flags
+### Phase Ordering Rationale
 
-- **ClickHouse table name discrepancy:** PITFALLS.md references `distributed_logs_v2`; ARCHITECTURE.md uses `distributed_logs`. Resolve with `SHOW TABLES FROM signoz_logs` against running SigNoz v0.135.1 in Phase 1.
-- **OTel demo minimal mode service list:** Confirm paymentservice, checkoutservice, and frontendservice are present in minimal mode before committing to it.
-- **Memgraph Lab automation vs manual:** If fully automated graph highlighting is required (vs rehearsed manual query), the `SET n.highlighted = true` side-effect approach needs prototyping in Phase 4.
+- We build Data Models and Core Abstractions first (Phases 1-2) to ensure the interface is completely insulated from specific provider idiosyncrasies.
+- We implement the DB layer (Phase 3) next to verify the models correctly align with graph database requirements (metadata).
+- Only then do we build the SigNoz specific plugin (Phase 4), forcing it to map into the robust, predefined core.
 
----
+### Research Flags
+
+Phases likely needing deeper research during planning:
+- **Phase 4:** Requires verification of exact SigNoz API payload structure, authentication methods, and endpoint documentation.
+
+Phases with standard patterns (skip research-phase):
+- **Phase 3:** Standard Cypher MERGE queries with `neo4j` async driver.
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | All versions verified from live PyPI API and Docker Hub API on 2026-08-05 |
-| Features | MEDIUM-HIGH | Enterprise SRE patterns HIGH; competitor feature versioning MEDIUM |
-| Architecture | HIGH | Verified against LangGraph source, SigNoz constants.go, production RCA agent implementations |
-| Pitfalls | HIGH | All critical pitfalls verified against official docs, GitHub issues, or source code |
+| Stack | HIGH | Uses well-understood, standard Python async ecosystem tools. |
+| Features | HIGH | Clear boundary drawn around MVP requirements; explicit anti-features listed. |
+| Architecture | HIGH | Strategy pattern properly decouples integration logic from core ingestion. |
+| Pitfalls | HIGH | Known patterns related to graph DB metadata and API ingestion are addressed. |
 
-**Overall confidence: HIGH**
+**Overall confidence:** HIGH
+
+### Gaps to Address
+
+- **SigNoz API Details:** We know *what* we need (topology data) but not the *exact shape* of SigNoz's API response. This will need to be resolved during Phase 4 implementation.
+- **Handling Large Graphs:** The initial implementation will use synchronous batched inserts. If the service graph grows to 1000+ nodes, we will need to revisit differential syncing.
+
+## Sources
+
+### Primary (HIGH confidence)
+- `AGENTS.md` — Entity Metadata Principle, provenance requirements.
+- `PROJECT.md` — Project constraints, zero LLM hallucinations philosophy, single-org deployment.
+
+### Secondary (MEDIUM confidence)
+- Python Standard Library (`abc`, `importlib`) — Standard plugin patterns.
+- `httpx` & `tenacity` Documentation — Async HTTP and retry standards.
+
+### Tertiary (LOW confidence)
+- OpenTelemetry Plugin Architecture Best Practices — Evaluated but adapted for a simpler single-org scope.
 
 ---
-
-*Research completed: 2026-08-05*
+*Research completed: 2026-08-06*
 *Ready for roadmap: yes*
