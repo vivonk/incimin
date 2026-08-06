@@ -22,12 +22,14 @@ for msg in st.session_state.messages:
     elif isinstance(msg, AIMessage):
         with st.chat_message("assistant"):
             if msg.content:
-                st.write(msg.content)
-    elif isinstance(msg, dict):
-        if msg.get("type") == "tool":
-            with st.status(f"Tool Execution: {msg.get('name')}", state="complete"):
-                st.write(msg.get("content"))
-
+                st.markdown(msg.content)
+            if msg.tool_calls:
+                for tool_call in msg.tool_calls:
+                    with st.status(f"Tool Execution: {tool_call['name']}", state="complete"):
+                        st.write(f"Arguments: {tool_call['args']}")
+    elif isinstance(msg, ToolMessage):
+        with st.status(f"Tool Result: {msg.name}", state="complete"):
+            st.write(f"Result: {msg.content}")
 
 def run_agent_sync(user_input, history):
     # Prepare state
@@ -80,32 +82,24 @@ if prompt := st.chat_input("Ask the AI SRE Agent..."):
                     if messages:
                         last_msg = messages[-1]
                         if isinstance(last_msg, AIMessage):
-                            if last_msg.tool_calls:
-                                for tool_call in last_msg.tool_calls:
-                                    st.session_state.messages.append({
-                                        "type": "tool",
-                                        "name": tool_call["name"],
-                                        "content": f"Arguments: {tool_call['args']}"
-                                    })
-                                    with st.status(f"Tool Execution: {tool_call['name']}", state="running") as status:
-                                        st.write(f"Arguments: {tool_call['args']}")
-                                        status.update(state="complete")
-                            
-                            if last_msg.content:
-                                final_message = last_msg
+                            # We only want to append it to history if it's not the exact same AIMessage object we just appended
+                            if not st.session_state.messages or st.session_state.messages[-1] != last_msg:
+                                st.session_state.messages.append(last_msg)
+                                if last_msg.content:
+                                    st.markdown(last_msg.content)
+                                
+                                if last_msg.tool_calls:
+                                    for tool_call in last_msg.tool_calls:
+                                        with st.status(f"Tool Execution: {tool_call['name']}", state="running") as status:
+                                            st.write(f"Arguments: {tool_call['args']}")
+                                            status.update(state="complete")
                 elif node_name == "tools":
                     messages = state_update.get("messages", [])
                     if messages:
                         for tool_msg in messages:
                             if isinstance(tool_msg, ToolMessage):
-                                st.session_state.messages.append({
-                                    "type": "tool",
-                                    "name": tool_msg.name,
-                                    "content": f"Result: {tool_msg.content}"
-                                })
-                                with st.status(f"Tool Result: {tool_msg.name}", state="complete"):
-                                    st.write(f"Result: {tool_msg.content}")
-        
-        if final_message and final_message.content:
-            st.session_state.messages.append(final_message)
-            message_placeholder.markdown(final_message.content)
+                                # Only append if we haven't appended this exact ToolMessage yet
+                                if not st.session_state.messages or st.session_state.messages[-1] != tool_msg:
+                                    st.session_state.messages.append(tool_msg)
+                                    with st.status(f"Tool Result: {tool_msg.name}", state="complete"):
+                                        st.write(f"Result: {tool_msg.content}")
