@@ -31,6 +31,8 @@ When an incident fires, the agent autonomously traverses the live service graph,
 - ✓ Streamlit chat UI rendering real-time tool-call glass-box visibility via `st.status` expanders — v1.5
 - ✓ Memgraph Lab live node-highlighting as agent traverses graph (split-screen visual) — v1.5
 - ✓ Codebase structured for production evolution post-demo (not throwaway) — v1.5
+- ✓ CORE-02: Validated in Phase 08: Core Abstraction Layer and Plugin Registry
+- ✓ CORE-03: Validated in Phase 08: Core Abstraction Layer and Plugin Registry
 
 ### Active
 
