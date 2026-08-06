@@ -6,7 +6,7 @@ status: planning
 last_updated: "2026-08-06T16:13:08.867Z"
 last_activity: 2026-08-06
 progress:
-  total_phases: 0
+  total_phases: 3
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -24,9 +24,9 @@ See: .planning/PROJECT.md (updated 2026-08-05)
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: 07-core-models-and-db-integration
 Plan: —
-Status: Defining requirements
+Status: Planning
 Last activity: 2026-08-06 — Milestone v1.6 started
 
 ## Performance Metrics

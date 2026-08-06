@@ -21,4 +21,8 @@
 - External Plugin Ecosystem (`entry_points`): Over-engineered for a single-org deployment; adds security and maintenance overhead.
 
 ## Traceability
-*(To be filled by roadmap)*
+- **CORE-01** -> Phase 07
+- **CORE-02** -> Phase 08
+- **CORE-03** -> Phase 08
+- **PLUG-01** -> Phase 09
+- **ADV-01** -> Phase 07
