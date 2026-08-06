@@ -1,5 +1,14 @@
 # incimin.io — AI SRE Agent
 
+## Current Milestone: v1.6 Plugin-based Service Topology
+
+**Goal:** Build a plugin-based architecture for service topology integration that allows fetching, standardizing, and persisting topology data from various OTEL providers.
+
+**Target features:**
+- **Core Abstraction Layer:** Responsible for standardizing, storing, and continuously updating the topology graph internally.
+- **SigNoz Plugin (`SigNozServiceMap`):** The first implementation, responsible for fetching topology from the SigNoz API, parsing it into the core format, and providing it to the abstraction layer.
+- **Extensible Architecture:** Designed to easily add future plugins for DataDog, Prometheus, and others.
+
 ## What This Is
 
 An autonomous AI SRE (Site Reliability Engineering) agent that performs real-time, deterministic root-cause analysis during infrastructure incidents. It unifies three operational planes — live service topology (Memgraph), high-velocity telemetry (SigNoz/ClickHouse), and human operational knowledge (Qdrant) — to replace the L1 first-responder triage role. Targeted at mid-size and large enterprises running distributed microservice architectures.
@@ -87,4 +96,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-08-06 after v1.5 milestone*
+*Last updated: 2026-08-06 starting v1.6 milestone*
