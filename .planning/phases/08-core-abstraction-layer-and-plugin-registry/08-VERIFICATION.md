@@ -1,5 +1,5 @@
 ---
-status: verified
+status: passed
 next_action: none
 next_command: ""
 ---

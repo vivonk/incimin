@@ -3,8 +3,8 @@
 ## Core Architecture
 
 - [x] **CORE-01**: The system must define a standardized Topology Data Model carrying `source`, `external_id`, `fetched_at`, and `schema_version` metadata.
-- [ ] **CORE-02**: The system must provide a Core Abstraction Layer (ABC) for topology providers to ensure standard interaction.
-- [ ] **CORE-03**: The system must implement a Simple Plugin Registry to discover and load internal plugins.
+- [x] **CORE-02**: The system must provide a Core Abstraction Layer (ABC) for topology providers to ensure standard interaction.
+- [x] **CORE-03**: The system must implement a Simple Plugin Registry to discover and load internal plugins.
 
 ## Plugins
 
