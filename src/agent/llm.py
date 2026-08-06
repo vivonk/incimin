@@ -36,7 +36,7 @@ def build_llm() -> BaseChatModel:
                 "claude-3-5-sonnet-20240620",
             ),
             temperature=0,
-            max_retries=1,
+            max_retries=0,
         )
 
     if provider == "gemini":
@@ -48,7 +48,7 @@ def build_llm() -> BaseChatModel:
                 or "gemini-3.6-flash"
             ),
             temperature=0,
-            max_retries=1,
+            max_retries=0,
         )
 
     if provider == "openrouter":
@@ -56,7 +56,7 @@ def build_llm() -> BaseChatModel:
         return ChatOpenRouter(
             model=os.getenv("OPENROUTER_MODEL", "openrouter/free"),
             temperature=0,
-            max_retries=1,
+            max_retries=0,
         )
 
     supported = ", ".join(SUPPORTED_PROVIDERS)
