@@ -37,7 +37,7 @@ streamlit run src/ui/app.py
 ## 5. Execute the Demo Scenario
 1. **Visual Topology:** Open Memgraph Lab at `http://localhost:3000` (Left window). Run the query:
    ```cypher
-   MATCH path = (s:Service {name: 'frontendservice'})-[*BFS]->(target) RETURN path
+   MATCH path = (s:Service {name: 'frontend'})-[*BFS]->(target) RETURN path
    ```
 2. **Inject Chaos:** Open a new terminal and intentionally crash the payment service to trigger latency:
    ```bash
