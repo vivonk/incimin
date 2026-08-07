@@ -1,17 +1,14 @@
 import json
 import asyncio
+import mcp.types as types
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
-from mcp.types import Tool, TextContent, CallToolResult
 from neo4j import AsyncGraphDatabase
 import clickhouse_connect
 
-mcp = Server("incimin-sre")
-
-@mcp.list_tools()
-async def handle_list_tools() -> list[Tool]:
-    return [
-        Tool(
+async def handle_list_tools(context, params) -> types.ListToolsResult:
+    return types.ListToolsResult(tools=[
+        types.Tool(
             name="get_service_topology",
             description="Get the upstream and downstream dependencies for a service",
             inputSchema={
@@ -23,7 +20,7 @@ async def handle_list_tools() -> list[Tool]:
                 "required": ["service_name"]
             }
         ),
-        Tool(
+        types.Tool(
             name="get_system_events",
             description="Get system events (deployments, PR merges) for a service within a time window",
             inputSchema={
@@ -36,16 +33,15 @@ async def handle_list_tools() -> list[Tool]:
                 "required": ["service_name", "start_time", "end_time"]
             }
         )
-    ]
+    ])
 
 def _query_ch(query: str) -> list:
     client = clickhouse_connect.get_client(host='127.0.0.1', port=8123)
     return client.query(query).result_rows
 
-@mcp.call_tool()
-async def handle_call_tool(name: str, arguments: dict | None) -> list[TextContent | CallToolResult]:
-    if arguments is None:
-        arguments = {}
+async def handle_call_tool(context, params) -> types.CallToolResult:
+    name = params.name
+    arguments = params.arguments or {}
         
     if name == "get_service_topology":
         service_name = arguments["service_name"]
@@ -63,7 +59,7 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                 results.append(record.data())
         await driver.close()
         
-        return [TextContent(type="text", text=json.dumps(results, indent=2))]
+        return types.CallToolResult(content=[types.TextContent(type="text", text=json.dumps(results, indent=2))])
         
     elif name == "get_system_events":
         service_name = arguments["service_name"]
@@ -89,11 +85,17 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                 }
                 for row in rows
             ]
-            return [TextContent(type="text", text=json.dumps(events, indent=2))]
+            return types.CallToolResult(content=[types.TextContent(type="text", text=json.dumps(events, indent=2))])
         except Exception as e:
-            return [TextContent(type="text", text=f"Error querying events: {e}")]
+            return types.CallToolResult(content=[types.TextContent(type="text", text=f"Error querying events: {e}")])
             
     raise ValueError(f"Unknown tool: {name}")
+
+mcp = Server(
+    "incimin-sre",
+    on_list_tools=handle_list_tools,
+    on_call_tool=handle_call_tool
+)
 
 async def main():
     async with stdio_server() as (read_stream, write_stream):
