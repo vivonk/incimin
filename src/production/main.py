@@ -19,7 +19,7 @@ sse = SseServerTransport("/mcp/messages")
 @app.get("/mcp/sse")
 async def handle_sse(request: Request):
     async with sse.connect_sse(
-        request.scope, request.receive, request.send
+        request.scope, request.receive, request._send
     ) as streams:
         await mcp.run(
             streams[0], streams[1], mcp.create_initialization_options()
@@ -27,7 +27,7 @@ async def handle_sse(request: Request):
 
 @app.post("/mcp/messages")
 async def handle_messages(request: Request):
-    await sse.handle_post_message(request.scope, request.receive, request.send)
+    await sse.handle_post_message(request.scope, request.receive, request._send)
 
 
 @app.on_event("startup")
