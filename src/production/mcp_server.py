@@ -15,7 +15,7 @@ async def handle_list_tools(context, params) -> types.ListToolsResult:
                 "type": "object",
                 "properties": {
                     "service_name": {"type": "string"},
-                    "max_depth": {"type": "integer", "default": 1}
+                    "max_depth": {"type": "integer", "default": 3, "description": "How many hops to traverse (default: 3). Use 1 for immediate dependencies, or higher for blast-radius analysis."}
                 },
                 "required": ["service_name"]
             }
@@ -45,11 +45,12 @@ async def handle_call_tool(context, params) -> types.CallToolResult:
         
     if name == "get_service_topology":
         service_name = arguments["service_name"]
-        max_depth = arguments.get("max_depth", 1)
+        max_depth = arguments.get("max_depth", 3)
         
         query = f"""
-        MATCH (s:Service {{name: $service_name}})-[r*1..{max_depth}]-(other:Service)
-        RETURN other.name as service, type(r[-1]) as rel_type, startNode(r[-1]).name as source_node, endNode(r[-1]).name as target_node
+        MATCH path = (s:Service {{name: $service_name}})-[*1..{max_depth}]-(other:Service)
+        UNWIND relationships(path) AS rel
+        RETURN DISTINCT startNode(rel).name AS source, type(rel) AS rel_type, endNode(rel).name AS target
         """
         driver = AsyncGraphDatabase.driver("bolt://127.0.0.1:7687", auth=("", ""))
         results = []
