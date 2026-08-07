@@ -82,6 +82,8 @@ fake LLM:
   session's file permissions — flip them by hand. This also fails
   `tests/test_ui.py::test_run_agent_sync`, the one remaining red test (pre-existing, fails
   identically on 7676277).
-- **This branch is based on `main`, not on `feat/meta-agent-subagents`.** The webhook was written
-  against the dd7a5c6 meta-agent graph and works on both builds, but `origin/main`'s `graph.py`
-  differs from dd7a5c6's by +114/-18. Decide which graph is canonical before merging.
+- ~~Which graph is canonical.~~ Resolved by merging `origin/main` (f6ec581): main carries the
+  meta-agent build (agent / tools / synthesize / verifier / finalize / graceful_exit), which now
+  supersedes the v1.5 graph this branch was written on top of. Extraction re-verified against it.
+- `tests/test_topology.py` (2) and `tests/test_signoz_plugin.py` (collection error) are red on the
+  branch, but equally red on pristine `origin/main` — Memgraph is not running. Not introduced here.
