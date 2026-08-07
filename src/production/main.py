@@ -8,8 +8,12 @@ from .topology.manager import TopologyManager
 from .topology.plugins.signoz import SigNozPluginConfig
 from .topology.repository import TopologyRepository
 from .topology.models import ServiceNode
+from .mcp_server import mcp
 
 app = FastAPI()
+
+# Mount the MCP SSE Server endpoint
+app.mount("/mcp", mcp.streamable_http_app())
 
 @app.on_event("startup")
 async def start_topology_sync():
