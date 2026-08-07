@@ -14,9 +14,10 @@ from starlette.requests import Request
 
 app = FastAPI()
 
+from starlette.routing import Route, Mount
+
 sse = SseServerTransport("/mcp/messages")
 
-@app.get("/mcp/sse")
 async def handle_sse(request: Request):
     async with sse.connect_sse(
         request.scope, request.receive, request._send
@@ -25,9 +26,9 @@ async def handle_sse(request: Request):
             streams[0], streams[1], mcp.create_initialization_options()
         )
 
-@app.post("/mcp/messages")
-async def handle_messages(request: Request):
-    await sse.handle_post_message(request.scope, request.receive, request._send)
+app.routes.append(Route("/mcp/sse", endpoint=handle_sse, methods=["GET"]))
+app.routes.append(Mount("/mcp/messages", app=sse.handle_post_message))
+
 
 
 @app.on_event("startup")
