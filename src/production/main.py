@@ -2,8 +2,39 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from .db import insert_webhook_event, merge_deployment_event, insert_pr_merge_event
 import logging
+import asyncio
+import os
+from .topology.manager import TopologyManager
+from .topology.plugins.signoz import SigNozPluginConfig
+from .topology.repository import TopologyRepository
+from .topology.models import ServiceNode
 
 app = FastAPI()
+
+@app.on_event("startup")
+async def start_topology_sync():
+    async def sync_loop():
+        config = SigNozPluginConfig(
+            SIGNOZ_API_URL=os.getenv("SIGNOZ_API_URL", "http://127.0.0.1:3301/api/v1/dependency_graph"),
+            SIGNOZ_API_TOKEN=os.getenv("SIGNOZ_API_TOKEN", "bwjOOKoWyIokMAUAb2m1p8OTkyw9b20KTahWjlrRH4k=")
+        )
+        plugin_class = TopologyManager.get_plugin_class("signoz")
+        plugin = plugin_class(config)
+        repo = TopologyRepository()
+        
+        while True:
+            try:
+                async for entity in plugin.fetch_topology():
+                    if isinstance(entity, ServiceNode):
+                        await repo.upsert_node(entity)
+                    else:
+                        await repo.upsert_edge(entity)
+                logging.info("Successfully synced SigNoz topology.")
+            except Exception as e:
+                logging.error(f"Error syncing topology: {e}")
+            await asyncio.sleep(60) # sync every 60 seconds
+            
+    asyncio.create_task(sync_loop())
 
 class WebhookPayload(BaseModel):
     repository_url: str
