@@ -14,20 +14,22 @@ from starlette.requests import Request
 
 app = FastAPI()
 
-from starlette.routing import Route, Mount
+from mcp.server.sse import SseServerTransport
 
 sse = SseServerTransport("/mcp/messages")
+_base_app = app
 
-async def handle_sse(scope, receive, send):
-    async with sse.connect_sse(
-        scope, receive, send
-    ) as streams:
-        await mcp.run(
-            streams[0], streams[1], mcp.create_initialization_options()
-        )
+async def asgi_wrapper(scope, receive, send):
+    if scope["type"] == "http" and scope["path"] == "/mcp/sse":
+        async with sse.connect_sse(scope, receive, send) as streams:
+            await mcp.run(streams[0], streams[1], mcp.create_initialization_options())
+    elif scope["type"] == "http" and scope["path"] == "/mcp/messages" and scope["method"] == "POST":
+        await sse.handle_post_message(scope, receive, send)
+    else:
+        await _base_app(scope, receive, send)
 
-app.routes.append(Route("/mcp/sse", endpoint=handle_sse, methods=["GET"]))
-app.routes.append(Mount("/mcp/messages", app=sse.handle_post_message))
+# Replace the FastAPI app with our ASGI wrapper
+app = asgi_wrapper
 
 
 
