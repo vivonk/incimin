@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from .db import insert_webhook_event, merge_deployment_event, insert_pr_merge_event, merge_pr_merge_event
+from .db import insert_webhook_event, merge_deployment_event, insert_pr_merge_event
 import logging
 
 app = FastAPI()
@@ -43,13 +43,6 @@ async def receive_pr_merge_webhook(payload: PRMergePayload):
             payload.repository_url, 
             payload.pr_number,
             payload.commit_sha, 
-            payload.author,
-            payload.service_name
-        )
-        await merge_pr_merge_event(
-            payload.repository_url,
-            payload.pr_number,
-            payload.commit_sha,
             payload.author,
             payload.service_name
         )
