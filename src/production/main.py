@@ -14,23 +14,6 @@ from starlette.requests import Request
 
 app = FastAPI()
 
-from mcp.server.sse import SseServerTransport
-
-sse = SseServerTransport("/mcp/messages")
-_base_app = app
-
-async def asgi_wrapper(scope, receive, send):
-    if scope["type"] == "http" and scope["path"] == "/mcp/sse":
-        async with sse.connect_sse(scope, receive, send) as streams:
-            await mcp.run(streams[0], streams[1], mcp.create_initialization_options())
-    elif scope["type"] == "http" and scope["path"] == "/mcp/messages" and scope["method"] == "POST":
-        await sse.handle_post_message(scope, receive, send)
-    else:
-        await _base_app(scope, receive, send)
-
-# Replace the FastAPI app with our ASGI wrapper
-app = asgi_wrapper
-
 
 
 @app.on_event("startup")
@@ -109,3 +92,22 @@ async def receive_pr_merge_webhook(payload: PRMergePayload):
         traceback.print_exc()
         logging.error(f"Error processing PR merge webhook: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+# We define a pure ASGI wrapper to bypass FastAPI/Starlette routing quirks 
+# and trailing-slash redirects entirely.
+from mcp.server.sse import SseServerTransport
+sse = SseServerTransport("/mcp/messages")
+
+_base_app = app
+
+async def asgi_wrapper(scope, receive, send):
+    if scope["type"] == "http" and scope["path"] == "/mcp/sse":
+        async with sse.connect_sse(scope, receive, send) as streams:
+            await mcp.run(streams[0], streams[1], mcp.create_initialization_options())
+    elif scope["type"] == "http" and scope["path"] == "/mcp/messages" and scope["method"] == "POST":
+        await sse.handle_post_message(scope, receive, send)
+    else:
+        await _base_app(scope, receive, send)
+
+# Replace the FastAPI app with our ASGI wrapper
+app = asgi_wrapper
