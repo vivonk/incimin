@@ -77,8 +77,33 @@ def _is_duplicate(ctx: AlertContext) -> bool:
 # -- targets ---------------------------------------------------------------
 
 
+def message_text(content: object) -> str:
+    """Flatten LangChain message content to text.
+
+    Reasoning-capable models return a list of blocks (thinking + text) rather than a bare string;
+    str()-ing that would log raw block dicts.
+    """
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, list):
+        parts = [
+            block.get("text", "")
+            for block in content
+            if isinstance(block, dict) and block.get("type") == "text"
+        ]
+        return "\n".join(p for p in parts if p).strip()
+    return str(content).strip() if content else ""
+
+
 def run_meta_agent(ctx: AlertContext) -> str:
-    """Drive the LangGraph meta-agent to a final answer, logging each node as it runs."""
+    """Drive the LangGraph meta-agent to a final answer, logging each node as it runs.
+
+    The final answer is taken as the last AI message carrying text, whichever node emitted it,
+    rather than by naming the terminal nodes. The graph has more than one exit — `finalize` and
+    `graceful_exit` in the meta-agent build, a conditional `agent -> END` in the v1.5 build — and
+    an extraction keyed to a fixed set of node names silently returns nothing on the paths it does
+    not know about. Updates arrive in execution order, so last-write-wins is the terminal message.
+    """
     from langchain_core.messages import AIMessage, HumanMessage
 
     from src.agent.graph import app as meta_agent
@@ -92,28 +117,35 @@ def run_meta_agent(ctx: AlertContext) -> str:
         "verification_result": None,
     }
 
-    final = ""
+    final, final_node = "", ""
     for update in meta_agent.stream(inputs, stream_mode="updates"):
         for node, state in update.items():
             if not isinstance(state, dict):
                 continue
             messages = state.get("messages") or []
-            if node == "agent":
+
+            # Glass-box logging. Each guard is independent: the meta-agent build emits
+            # synthesis/verification updates that the v1.5 build does not, and vice versa.
+            if node == "tools":
+                for msg in messages:
+                    log.info("[%s] sub-agent result %s: %s", ctx.service, msg.name, msg.content)
+            else:
                 calls = getattr(messages[-1], "tool_calls", None) if messages else None
                 for call in calls or []:
                     log.info("[%s] sub-agent call %s(%s)", ctx.service, call["name"], call["args"])
-            elif node == "tools":
-                for msg in messages:
-                    log.info("[%s] sub-agent result %s: %s", ctx.service, msg.name, msg.content)
-            elif node == "synthesize" and state.get("synthesis") is not None:
+            if state.get("synthesis") is not None:
                 log.info("[%s] draft synthesis: %s", ctx.service, state["synthesis"])
-            elif node == "verifier":
-                log.info("[%s] verifier: %s", ctx.service, state.get("verification_result"))
-            elif node in ("finalize", "graceful_exit"):
-                last = messages[-1] if messages else None
-                if isinstance(last, AIMessage):
-                    final = str(last.content)
-    return final or "meta-agent produced no final message"
+            if state.get("verification_result") is not None:
+                log.info("[%s] verifier: %s", ctx.service, state["verification_result"])
+
+            for msg in messages:
+                if isinstance(msg, AIMessage) and (text := message_text(msg.content)):
+                    final, final_node = text, node
+
+    if not final:
+        return "meta-agent produced no final message"
+    log.debug("[%s] final message came from node %r", ctx.service, final_node)
+    return final
 
 
 def run_diagnosis(ctx: AlertContext) -> str:

@@ -4,9 +4,12 @@ The meta-agent itself is not exercised here — `run_alert` is replaced with a r
 stay fast and need no API key or data plane. What is under test is the contract the alert sender
 sees (always 200, never blocking) and the AlertContext handed to the agent.
 """
+import sys
 import threading
+import types
 
 import pytest
+from langchain_core.messages import AIMessage, ToolMessage
 from starlette.testclient import TestClient
 
 from src.webhook import app as webhook_app
@@ -177,6 +180,90 @@ def test_repeat_send_is_suppressed(client, dispatched):
 
 def test_health(client):
     assert client.get("/health").json() == {"status": "ok"}
+
+
+# -- final-answer extraction -----------------------------------------------
+#
+# The graph has more than one exit and its shape differs between builds: the meta-agent build
+# ends at `finalize` or `graceful_exit`, the v1.5 build has a conditional `agent -> END`. Each
+# case below is one of those real exits.
+
+
+@pytest.fixture
+def fake_graph(monkeypatch):
+    """Install a stand-in `src.agent.graph` whose stream yields canned node updates."""
+
+    def install(updates):
+        module = types.ModuleType("src.agent.graph")
+        module.app = types.SimpleNamespace(stream=lambda inputs, stream_mode: iter(updates))
+        monkeypatch.setitem(sys.modules, "src.agent.graph", module)
+
+    return install
+
+
+def _run():
+    return webhook_app.run_meta_agent(parse_alerts(FIRING_PAYLOAD)[0])
+
+
+def test_final_from_finalize_node(fake_graph):
+    fake_graph([{"finalize": {"messages": [AIMessage(content="Root cause: paymentservice")]}}])
+
+    assert _run() == "Root cause: paymentservice"
+
+
+def test_final_from_graceful_exit_node(fake_graph):
+    fake_graph(
+        [
+            {"synthesize": {"synthesis": None}},
+            {"verifier": {"verification_result": {"passed": False, "detail": "no evidence"}}},
+            {"graceful_exit": {"messages": [AIMessage(content="insufficient data (no evidence)")]}},
+        ]
+    )
+
+    assert _run() == "insufficient data (no evidence)"
+
+
+def test_final_from_agent_node_when_graph_exits_there(fake_graph):
+    """The v1.5 build's `agent -> END` edge — the path that used to return nothing."""
+    fake_graph(
+        [
+            {"agent": {"messages": [AIMessage(content="", tool_calls=[
+                {"name": "graph_bfs_tool", "args": {"source": "paymentservice"}, "id": "1"}
+            ])]}},
+            {"tools": {"messages": [ToolMessage(content="no path found", name="graph_bfs_tool", tool_call_id="1")]}},
+            {"agent": {"messages": [AIMessage(content="Cannot determine a root cause.")]}},
+        ]
+    )
+
+    assert _run() == "Cannot determine a root cause."
+
+
+def test_final_flattens_reasoning_content_blocks(fake_graph):
+    """Reasoning models return blocks, not a string; str() would log raw dicts."""
+    fake_graph(
+        [
+            {
+                "finalize": {
+                    "messages": [
+                        AIMessage(
+                            content=[
+                                {"type": "thinking", "thinking": "hmm"},
+                                {"type": "text", "text": "Root cause: cart"},
+                            ]
+                        )
+                    ]
+                }
+            }
+        ]
+    )
+
+    assert _run() == "Root cause: cart"
+
+
+def test_no_ai_message_reports_rather_than_returning_empty(fake_graph):
+    fake_graph([{"tools": {"messages": [ToolMessage(content="x", name="t", tool_call_id="1")]}}])
+
+    assert _run() == "meta-agent produced no final message"
 
 
 def test_unknown_target_is_logged_not_raised(monkeypatch, caplog):

@@ -55,14 +55,33 @@ sub-agents in the prescribed order with the alert's service —
 `qdrant_runbook_tool("paymentservice high 5xx error rate")`. Each sub-agent returned a connection
 error because the Docker data plane was not running, which is the intended degrade path.
 
+## Final-answer extraction (fixed)
+
+The first verification run logged `meta-agent produced no final message`. Root cause: extraction was
+keyed to the node names `finalize` and `graceful_exit`, but the graph has more than one exit and its
+shape differs between builds — and the checkout had moved from `feat/meta-agent-subagents` (dd7a5c6,
+`agent -> synthesize -> verifier -> finalize|graceful_exit`) to `main` (v1.5, `agent <-> tools` with
+a conditional `agent -> END`). On the v1.5 build a normal run exits straight from `agent`, so no
+named terminal node ever ran and extraction returned nothing.
+
+Now the final answer is the last AI message carrying text, whichever node emitted it — updates
+arrive in execution order, so last-write-wins is the terminal message. Reasoning-model content
+blocks are flattened rather than `str()`-ed. Verified against both real compiled graphs, driven by a
+fake LLM:
+
+| Graph | Nodes | Result |
+|---|---|---|
+| v1.5 (`main`) | agent, tools, graceful_exit | `"Cannot determine a root cause from the evidence."` |
+| meta-agent (dd7a5c6) | + synthesize, verifier, finalize | `"insufficient data to determine root cause (No synthesis was produced to verify.)"` |
+
 ## Open items
 
 - **`.env` still has `LLM_PROVIDER=openrouter` with an empty key** (plan fact 6), so the first run
-  failed with `OPENROUTER_API_KEY is required`. The verification run above used
+  failed with `OPENROUTER_API_KEY is required`. The verification runs used
   `LLM_PROVIDER=anthropic ANTHROPIC_MODEL=claude-sonnet-5`. `.env`/`.env.example` are outside this
-  session's file permissions — flip them by hand.
-- **The final-answer log read `meta-agent produced no final message`** on the verification run. Every
-  sub-agent had errored, so the graph took the `synthesis=None` -> verifier -> `graceful_exit` path;
-  the `graceful_exit` AIMessage did not surface in the `stream(stream_mode="updates")` output the
-  webhook reads. Sub-agent dispatch is confirmed working; the terminal-node extraction needs one more
-  pass against a live data plane.
+  session's file permissions — flip them by hand. This also fails
+  `tests/test_ui.py::test_run_agent_sync`, the one remaining red test (pre-existing, fails
+  identically on 7676277).
+- **This branch is based on `main`, not on `feat/meta-agent-subagents`.** The webhook was written
+  against the dd7a5c6 meta-agent graph and works on both builds, but `origin/main`'s `graph.py`
+  differs from dd7a5c6's by +114/-18. Decide which graph is canonical before merging.
