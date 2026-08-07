@@ -3,6 +3,7 @@
 ## Milestones
 
 - ✅ **v1.5 Milestone** — Phases 1-5 (shipped 2026-08-06)
+- ✅ **v1.6 Plugin-based Service Topology** — Phases 07-09 (shipped 2026-08-07)
 
 ## Phases
 
@@ -17,6 +18,15 @@
 
 </details>
 
+<details>
+<summary>✅ v1.6 Plugin-based Service Topology (Phases 07-09) — SHIPPED 2026-08-07</summary>
+
+- [x] Phase 07: Core Models and DB Integration (1/1 plans) — completed 2026-08-06
+- [x] Phase 08: Core Abstraction Layer and Plugin Registry (1/1 plans) — completed 2026-08-06
+- [x] Phase 09: SigNoz Plugin MVP Implementation (1/1 plans) — completed 2026-08-07
+
+</details>
+
 ## Progress
 
 | Phase | Milestone | Plans Complete | Status | Completed |
@@ -26,3 +36,7 @@
 | 3. Agent Core | v1.5 | 1/1 | Complete | 2026-08-06 |
 | 4. UI Integration & Demo Choreography | v1.5 | 1/1 | Complete | 2026-08-06 |
 | 5. Golden Path Validation | v1.5 | 1/1 | Complete | 2026-08-06 |
+| 6. Production Data Planes | v1.5 | 1/1 | Complete | 2026-08-06 |
+| 07. Core Models and DB Integration | v1.6 | 1/1 | Complete | 2026-08-06 |
+| 08. Core Abstraction Layer and Plugin Registry | v1.6 | 1/1 | Complete | 2026-08-06 |
+| 09. SigNoz Plugin MVP Implementation | v1.6 | 1/1 | Complete | 2026-08-07 |

@@ -1,5 +1,17 @@
 # Milestones
 
+## v1.6 Plugin-based Service Topology (Shipped: 2026-08-07)
+
+**Phases completed:** 3 phases, 3 plans, 10 tasks
+
+**Key accomplishments:**
+
+- Pydantic domain models enforcing entity metadata and a Memgraph repository layer for idempotent upserts
+- Core abstraction layer using ABC and explicit plugin registry manager for topology fetchers
+- SigNoz API fetcher implementing the TopologyPlugin interface yielding Pydantic entity models
+
+---
+
 ## v1.5 v1.5 (Shipped: 2026-08-06)
 
 **Phases completed:** 5 phases, 11 plans, 19 tasks
