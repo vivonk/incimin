@@ -9,11 +9,26 @@ from .topology.plugins.signoz import SigNozPluginConfig
 from .topology.repository import TopologyRepository
 from .topology.models import ServiceNode
 from .mcp_server import mcp
+from mcp.server.sse import SseServerTransport
+from starlette.requests import Request
 
 app = FastAPI()
 
-# Mount the MCP SSE Server endpoint
-app.mount("/mcp", mcp.streamable_http_app())
+sse = SseServerTransport("/mcp/messages")
+
+@app.get("/mcp/sse")
+async def handle_sse(request: Request):
+    async with sse.connect_sse(
+        request.scope, request.receive, request.send
+    ) as streams:
+        await mcp.run(
+            streams[0], streams[1], mcp.create_initialization_options()
+        )
+
+@app.post("/mcp/messages")
+async def handle_messages(request: Request):
+    await sse.handle_post_message(request.scope, request.receive, request.send)
+
 
 @app.on_event("startup")
 async def start_topology_sync():
