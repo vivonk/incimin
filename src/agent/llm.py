@@ -18,6 +18,10 @@ load_dotenv(override=False)
 
 SUPPORTED_PROVIDERS = ("anthropic", "gemini", "openrouter")
 
+# An agent turn (tool calls + synthesis) does not fit in the 10s this used to allow; that timeout
+# fired mid-call rather than protecting against anything.
+LLM_TIMEOUT = float(os.getenv("LLM_TIMEOUT", "120"))
+
 
 def get_llm_provider() -> str:
     return os.getenv("LLM_PROVIDER", "anthropic").strip().lower() or "anthropic"
@@ -35,14 +39,12 @@ def build_llm() -> BaseChatModel:
 
     if provider == "anthropic":
         _require_api_key(provider, "ANTHROPIC_API_KEY")
+        # No `temperature`: Claude 5 models reject it outright with
+        # `400 invalid_request_error: "temperature is deprecated for this model"`.
         return ChatAnthropic(
-            model=os.getenv(
-                "ANTHROPIC_MODEL",
-                "claude-3-5-sonnet-20240620",
-            ),
-            temperature=0,
+            model=os.getenv("ANTHROPIC_MODEL", "claude-sonnet-5"),
             max_retries=0,
-            timeout=10.0,
+            timeout=LLM_TIMEOUT,
         )
 
     if provider == "gemini":
@@ -55,7 +57,7 @@ def build_llm() -> BaseChatModel:
             ),
             temperature=0,
             max_retries=0,
-            timeout=10.0,
+            timeout=LLM_TIMEOUT,
         )
 
     if provider == "openrouter":
@@ -64,7 +66,7 @@ def build_llm() -> BaseChatModel:
             model=os.getenv("OPENROUTER_MODEL", "openrouter/free"),
             temperature=0,
             max_retries=0,
-            timeout=10.0,
+            timeout=LLM_TIMEOUT,
         )
 
     supported = ", ".join(SUPPORTED_PROVIDERS)
