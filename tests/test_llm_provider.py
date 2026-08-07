@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from src.agent.llm import build_llm, get_llm_provider
+from src.agent.llm import LLM_TIMEOUT, build_llm, get_llm_provider
 
 
 class TestLLMProvider(unittest.TestCase):
@@ -18,11 +18,18 @@ class TestLLMProvider(unittest.TestCase):
                 self.assertEqual(get_llm_provider(), "anthropic")
                 self.assertIs(build_llm(), expected)
                 mock_anthropic.assert_called_once_with(
-                    model="claude-3-5-sonnet-20240620",
-                    temperature=0,
+                    model="claude-sonnet-5",
                     max_retries=0,
-                    timeout=10.0,
+                    timeout=LLM_TIMEOUT,
                 )
+
+    def test_anthropic_omits_temperature(self):
+        """Claude 5 rejects `temperature` outright: 400 "temperature is deprecated for this model"."""
+        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}, clear=True):
+            with patch("src.agent.llm.ChatAnthropic") as mock_anthropic:
+                build_llm()
+
+                self.assertNotIn("temperature", mock_anthropic.call_args.kwargs)
 
     def test_gemini_provider(self):
         environment = {
@@ -41,7 +48,7 @@ class TestLLMProvider(unittest.TestCase):
                     model="gemini-test-model",
                     temperature=0,
                     max_retries=0,
-                    timeout=10.0,
+                    timeout=LLM_TIMEOUT,
                 )
 
     def test_google_model_takes_precedence_over_gemini_model(self):
@@ -59,7 +66,7 @@ class TestLLMProvider(unittest.TestCase):
                     model="google-model",
                     temperature=0,
                     max_retries=0,
-                    timeout=10.0,
+                    timeout=LLM_TIMEOUT,
                 )
 
     def test_openrouter_provider(self):
@@ -75,7 +82,7 @@ class TestLLMProvider(unittest.TestCase):
                     model="openrouter/free",
                     temperature=0,
                     max_retries=0,
-                    timeout=10.0,
+                    timeout=LLM_TIMEOUT,
                 )
 
     def test_unsupported_provider_fails_clearly(self):
