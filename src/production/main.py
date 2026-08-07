@@ -18,9 +18,9 @@ from starlette.routing import Route, Mount
 
 sse = SseServerTransport("/mcp/messages")
 
-async def handle_sse(request: Request):
+async def handle_sse(scope, receive, send):
     async with sse.connect_sse(
-        request.scope, request.receive, request._send
+        scope, receive, send
     ) as streams:
         await mcp.run(
             streams[0], streams[1], mcp.create_initialization_options()
