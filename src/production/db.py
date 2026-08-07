@@ -49,16 +49,16 @@ async def merge_deployment_event(repo_url: str, service_name: str):
         await session.run(query, repo=repo_url, service=service_name)
     await driver.close()
 
-async def insert_pr_merge_event(repo_url: str, pr_number: int, commit_sha: str, author: str):
+async def insert_pr_merge_event(repo_url: str, pr_number: int, commit_sha: str, author: str, service_name: str):
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     ext_id = str(uuid.uuid4())
     query = f"""
     INSERT INTO system_changes (timestamp, repository_url, commit_sha, service_name, source, external_id, fetched_at, schema_version)
-    VALUES (now(), '{repo_url}', '{commit_sha}', 'PR-{pr_number}', 'github_webhook', '{ext_id}', now(), '1.0')
+    VALUES (now(), '{repo_url}', '{commit_sha}', '{service_name}', 'github_webhook', '{ext_id}', now(), '1.0')
     """
     await asyncio.to_thread(_insert_ch, query)
 
-async def merge_pr_merge_event(repo_url: str, pr_number: int, commit_sha: str, author: str):
+async def merge_pr_merge_event(repo_url: str, pr_number: int, commit_sha: str, author: str, service_name: str):
     now_str = datetime.datetime.now().isoformat()
     query = f"""
     MERGE (r:Repository {{url: $repo}})
@@ -66,6 +66,12 @@ async def merge_pr_merge_event(repo_url: str, pr_number: int, commit_sha: str, a
         r.external_id = '{str(uuid.uuid4())}',
         r.fetched_at = '{now_str}',
         r.schema_version = '1.0'
+        
+    MERGE (s:Service {{name: $service}})
+    SET s.source = 'github_webhook',
+        s.external_id = '{str(uuid.uuid4())}',
+        s.fetched_at = '{now_str}',
+        s.schema_version = '1.0'
         
     MERGE (pr:PullRequest {{number: $pr_num, repository: $repo}})
     SET pr.commit_sha = $sha,
@@ -80,8 +86,14 @@ async def merge_pr_merge_event(repo_url: str, pr_number: int, commit_sha: str, a
         rel.external_id = '{str(uuid.uuid4())}',
         rel.fetched_at = '{now_str}',
         rel.schema_version = '1.0'
+        
+    MERGE (pr)-[rel2:AFFECTS]->(s)
+    SET rel2.source = 'github_webhook',
+        rel2.external_id = '{str(uuid.uuid4())}',
+        rel2.fetched_at = '{now_str}',
+        rel2.schema_version = '1.0'
     """
     driver = AsyncGraphDatabase.driver("bolt://127.0.0.1:7687", auth=("", ""))
     async with driver.session() as session:
-        await session.run(query, repo=repo_url, pr_num=pr_number, sha=commit_sha, author=author)
+        await session.run(query, repo=repo_url, pr_num=pr_number, sha=commit_sha, author=author, service=service_name)
     await driver.close()

@@ -34,6 +34,7 @@ class PRMergePayload(BaseModel):
     pr_number: int
     commit_sha: str
     author: str
+    service_name: str
 
 @app.post("/webhook/pr-merge")
 async def receive_pr_merge_webhook(payload: PRMergePayload):
@@ -42,13 +43,15 @@ async def receive_pr_merge_webhook(payload: PRMergePayload):
             payload.repository_url, 
             payload.pr_number,
             payload.commit_sha, 
-            payload.author
+            payload.author,
+            payload.service_name
         )
         await merge_pr_merge_event(
             payload.repository_url,
             payload.pr_number,
             payload.commit_sha,
-            payload.author
+            payload.author,
+            payload.service_name
         )
         return {"status": "success"}
     except Exception as e:
