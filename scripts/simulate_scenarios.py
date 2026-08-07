@@ -15,7 +15,7 @@ async def trigger_pr_merge(service_name: str, author: str = "bad-actor"):
         "service_name": service_name,
         "event_time": event_time
     }
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=60.0) as client:
         r = await client.post(f"{API_URL}/webhook/pr-merge", json=payload)
         if r.status_code == 200:
             print(f"[+] Injected PR merge event for '{service_name}' at {event_time}")
@@ -30,7 +30,7 @@ async def trigger_deployment(service_name: str):
         "service_name": service_name,
         "event_time": event_time
     }
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=60.0) as client:
         r = await client.post(f"{API_URL}/webhook", json=payload)
         if r.status_code == 200:
             print(f"[+] Injected Deployment event for '{service_name}' at {event_time}")
