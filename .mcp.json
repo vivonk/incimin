@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "incimin-sre": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "https://nirmal-mcp.ngrok.app/mcp/sse",
+        "--transport",
+        "sse-only"
+      ]
+    }
+  }
+}
