@@ -22,62 +22,78 @@ class SigNozServiceMap(TopologyPlugin):
 
     @retry(stop=stop_after_attempt(5), wait=wait_exponential(max=30))
     async def _fetch_data(self) -> Any:
-        headers = {"Authorization": f"Bearer {self.config.SIGNOZ_API_TOKEN}"}
+        headers = {
+            "SigNoz-Api-Key": self.config.SIGNOZ_API_TOKEN,
+            "Content-Type": "application/json"
+        }
+        # Dynamic timestamps (last 1 hour in nanoseconds)
+        import time
+        now_ns = int(time.time() * 1e9)
+        start_ns = now_ns - (3600 * int(1e9))
+        payload = {
+            "start": str(start_ns),
+            "end": str(now_ns),
+            "tags": []
+        }
+        
         async with httpx.AsyncClient() as client:
-            response = await client.get(self.config.SIGNOZ_API_URL, headers=headers)
+            response = await client.post(self.config.SIGNOZ_API_URL, headers=headers, json=payload)
             response.raise_for_status()
             return response.json()
 
     async def fetch_topology(self) -> AsyncIterator[ServiceNode | ServiceEdge]:
         data = await self._fetch_data()
         
-        # Determine if data is a list or a dict containing lists
-        items = []
-        if isinstance(data, list):
-            items = data
-        elif isinstance(data, dict):
-            items = data.get("data", [])
-            if not items:
-                # maybe nodes and edges?
-                nodes = data.get("nodes", [])
-                edges = data.get("edges", [])
-                items = nodes + edges
-
+        # The SigNoz dependency graph API returns a list of edges directly
+        items = data if isinstance(data, list) else data.get("data", [])
+        seen_nodes = set()
+        
         for item in items:
             if not isinstance(item, dict):
                 continue
+                
+            parent_name = item.get("parent")
+            child_name = item.get("child")
             
-            external_id = item.get("external_id") or item.get("id")
-            if not external_id:
-                logging.warning(f"Skipping malformed entity, missing external_id: {item}")
+            if not parent_name or not child_name:
+                logging.warning(f"Skipping malformed entity, missing parent/child: {item}")
                 continue
                 
             fetched_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
             
-            try:
-                # If item has source_node_id and target_node_id, treat it as an edge
-                source_id = item.get("source_node_id") or item.get("source")
-                target_id = item.get("target_node_id") or item.get("target")
+            # Yield parent node if not seen yet
+            if parent_name not in seen_nodes:
+                yield ServiceNode(
+                    source="signoz",
+                    external_id=parent_name,
+                    schema_version="1",
+                    fetched_at=fetched_at,
+                    name=parent_name,
+                    attributes={}
+                )
+                seen_nodes.add(parent_name)
                 
-                if source_id and target_id:
-                    yield ServiceEdge(
-                        source="signoz",
-                        external_id=str(external_id),
-                        schema_version="1",
-                        fetched_at=fetched_at,
-                        source_node_id=str(source_id),
-                        target_node_id=str(target_id),
-                        attributes=item.get("attributes", {})
-                    )
-                else:
-                    yield ServiceNode(
-                        source="signoz",
-                        external_id=str(external_id),
-                        schema_version="1",
-                        fetched_at=fetched_at,
-                        name=item.get("name", "unknown"),
-                        attributes=item.get("attributes", {})
-                    )
-            except Exception as e:
-                logging.warning(f"Skipping malformed entity {external_id}: {e}")
-                continue
+            # Yield child node if not seen yet
+            if child_name not in seen_nodes:
+                yield ServiceNode(
+                    source="signoz",
+                    external_id=child_name,
+                    schema_version="1",
+                    fetched_at=fetched_at,
+                    name=child_name,
+                    attributes={}
+                )
+                seen_nodes.add(child_name)
+                
+            # Yield the dependency edge with its metrics (callCount, p99, etc.)
+            edge_id = f"{parent_name}->{child_name}"
+            attributes = {k: v for k, v in item.items() if k not in ("parent", "child")}
+            yield ServiceEdge(
+                source="signoz",
+                external_id=edge_id,
+                schema_version="1",
+                fetched_at=fetched_at,
+                source_node_id=parent_name,
+                target_node_id=child_name,
+                attributes=attributes
+            )
