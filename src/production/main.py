@@ -9,6 +9,7 @@ class WebhookPayload(BaseModel):
     repository_url: str
     commit_sha: str
     service_name: str
+    event_time: str
 
 @app.post("/webhook")
 async def receive_webhook(payload: WebhookPayload):
@@ -16,7 +17,8 @@ async def receive_webhook(payload: WebhookPayload):
         await insert_webhook_event(
             payload.repository_url, 
             payload.commit_sha, 
-            payload.service_name
+            payload.service_name,
+            payload.event_time
         )
         await merge_deployment_event(
             payload.repository_url,
@@ -35,6 +37,7 @@ class PRMergePayload(BaseModel):
     commit_sha: str
     author: str
     service_name: str
+    event_time: str
 
 @app.post("/webhook/pr-merge")
 async def receive_pr_merge_webhook(payload: PRMergePayload):
@@ -44,7 +47,8 @@ async def receive_pr_merge_webhook(payload: PRMergePayload):
             payload.pr_number,
             payload.commit_sha, 
             payload.author,
-            payload.service_name
+            payload.service_name,
+            payload.event_time
         )
         return {"status": "success"}
     except Exception as e:
