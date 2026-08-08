@@ -41,6 +41,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
+from src.agent import tracing
 from src.webhook.alert import SERVICE_LABEL_KEYS, AlertContext, parse_alerts
 
 logging.basicConfig(
@@ -75,6 +76,30 @@ def _is_duplicate(ctx: AlertContext) -> bool:
 
 
 # -- targets ---------------------------------------------------------------
+
+
+def trace_config(ctx: AlertContext, target: str) -> dict:
+    """Langfuse config for one alert's run.
+
+    Session is the dedupe key (the Alertmanager fingerprint where one is present), so every
+    resend of a single firing incident groups into one Langfuse session instead of appearing as
+    unrelated traces — that is the view you want when asking "what did the agent conclude about
+    *this* incident, across all the times it fired".
+    """
+    return tracing.trace_config(
+        f"sre-alert:{ctx.alertname}",
+        session_id=ctx.dedupe_key,
+        tags=["incimin-webhook", target, ctx.severity, ctx.service],
+        metadata={
+            "alertname": ctx.alertname,
+            "service": ctx.service,
+            "severity": ctx.severity,
+            "fingerprint": ctx.fingerprint,
+            "fired_at": ctx.fired_at.isoformat(),
+            "target": target,
+            "max_steps": MAX_STEPS,
+        },
+    )
 
 
 def message_text(content: object) -> str:
@@ -118,7 +143,7 @@ def run_meta_agent(ctx: AlertContext) -> str:
     }
 
     final, final_node = "", ""
-    for update in meta_agent.stream(inputs, stream_mode="updates"):
+    for update in meta_agent.stream(inputs, stream_mode="updates", config=trace_config(ctx, "agent")):
         for node, state in update.items():
             if not isinstance(state, dict):
                 continue
@@ -157,6 +182,7 @@ def run_diagnosis(ctx: AlertContext) -> str:
         ctx.message or f"{ctx.alertname}: {ctx.service} is alerting",
         # diagnose() formats naive local wall-clock times for the MCP server.
         alert_time=ctx.fired_at.astimezone().replace(tzinfo=None),
+        config=trace_config(ctx, "diagnosis"),
     )
     log.info(
         "[%s] evidence: related=%d changed=%s errors=%s",
@@ -189,6 +215,11 @@ def run_alert(ctx: AlertContext) -> None:
             )
         except Exception:
             log.exception("[%s] %s failed", ctx.service, name)
+        finally:
+            # These runs happen on short-lived threads that finish well inside the SDK's batch
+            # interval; without an explicit flush the trace for a completed incident sits in a
+            # buffer instead of appearing in Langfuse.
+            tracing.flush()
 
 
 # -- routes ----------------------------------------------------------------

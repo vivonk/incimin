@@ -98,9 +98,15 @@ def diagnose(
     alert_time: datetime | None = None,
     window_hours: float = DEFAULT_WINDOW_HOURS,
     max_depth: int = 1,
+    config: dict | None = None,
 ) -> Diagnosis:
     """Run the full flow. Never raises on evidence-gathering failure — partial evidence still
-    produces a diagnosis, with the failures recorded in `errors`."""
+    produces a diagnosis, with the failures recorded in `errors`.
+
+    `config` is a LangChain RunnableConfig forwarded to the synthesis call — in practice the
+    Langfuse tracing config from `src.agent.tracing`. The gathering steps are plain MCP calls
+    with no LLM in them, so the config only has anywhere to go at the synthesis step.
+    """
     alert_time = alert_time or datetime.now()
     window_start = alert_time - timedelta(hours=window_hours)
     result = Diagnosis(alerting_service=alerting_service, alert_time=alert_time)
@@ -131,11 +137,15 @@ def diagnose(
                     result.errors.append(f"events[{service}]: {tool_result.error}")
                     result.changes[service] = []
 
-    result.synthesis = _synthesize(result, alert_text or f"{alerting_service} is alerting", window_start)
+    result.synthesis = _synthesize(
+        result, alert_text or f"{alerting_service} is alerting", window_start, config=config
+    )
     return result
 
 
-def _synthesize(result: Diagnosis, alert_text: str, window_start: datetime) -> str:
+def _synthesize(
+    result: Diagnosis, alert_text: str, window_start: datetime, config: dict | None = None
+) -> str:
     topology = "\n".join(
         f"  {s} -[{'/'.join(r)}]-> {t}" for s, t, r in result.edges
     ) or "  (no topology returned)"
@@ -152,7 +162,7 @@ def _synthesize(result: Diagnosis, alert_text: str, window_start: datetime) -> s
         events=events,
     )
     try:
-        return _text_of(build_llm().invoke(prompt).content)
+        return _text_of(build_llm().invoke(prompt, config=config or None).content)
     except Exception as exc:
         result.errors.append(f"synthesis: {exc}")
         return "Synthesis unavailable — see errors."
