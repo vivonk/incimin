@@ -238,3 +238,110 @@ async def list_steps(incident_id: uuid.UUID) -> list[dict[str, Any]]:
             (incident_id,),
         )
         return list(await cur.fetchall())
+
+
+# -- approvals -------------------------------------------------------------
+
+
+async def open_approval(
+    incident_id: uuid.UUID,
+    kind: str,
+    proposal: dict[str, Any],
+    step_seq: int | None = None,
+) -> dict[str, Any] | None:
+    """Open a pending gate. At most one per incident — enforced by a partial unique
+    index, so a node that replays cannot open a second gate."""
+    async with pool().connection() as conn:
+        cur = await conn.execute(
+            """
+            INSERT INTO approvals (id, incident_id, step_seq, kind, proposal, decision)
+            VALUES (%(id)s, %(incident_id)s, %(step_seq)s, %(kind)s, %(proposal)s, 'pending')
+            ON CONFLICT (incident_id) WHERE decision = 'pending'
+            DO NOTHING
+            RETURNING *
+            """,
+            {
+                "id": uuid.uuid4(),
+                "incident_id": incident_id,
+                "step_seq": step_seq,
+                "kind": kind,
+                "proposal": Jsonb(proposal),
+            },
+        )
+        row = await cur.fetchone()
+    if row is not None:
+        return row
+    return await pending_approval(incident_id)
+
+
+async def pending_approval(incident_id: uuid.UUID) -> dict[str, Any] | None:
+    async with pool().connection() as conn:
+        cur = await conn.execute(
+            "SELECT * FROM approvals WHERE incident_id = %s AND decision = 'pending'",
+            (incident_id,),
+        )
+        return await cur.fetchone()
+
+
+async def list_approvals(incident_id: uuid.UUID) -> list[dict[str, Any]]:
+    async with pool().connection() as conn:
+        cur = await conn.execute(
+            "SELECT * FROM approvals WHERE incident_id = %s ORDER BY created_at",
+            (incident_id,),
+        )
+        return list(await cur.fetchall())
+
+
+async def decide_approval(
+    approval_id: uuid.UUID, decision: str, decided_by: str, note: str | None
+) -> dict[str, Any] | None:
+    """Record a human decision, but only on a gate that is still pending.
+
+    The `AND decision = 'pending'` predicate is the whole point: two people
+    clicking Approve at the same moment, or one click replayed, both reach here and
+    exactly one gets a row back. A SELECT-then-UPDATE would let both through.
+    """
+    async with pool().connection() as conn:
+        cur = await conn.execute(
+            """
+            UPDATE approvals
+               SET decision = %(decision)s, decided_by = %(decided_by)s,
+                   note = %(note)s, decided_at = now()
+             WHERE id = %(id)s AND decision = 'pending'
+            RETURNING *
+            """,
+            {"id": approval_id, "decision": decision, "decided_by": decided_by, "note": note},
+        )
+        return await cur.fetchone()
+
+
+async def claim_for_execution(approval_id: uuid.UUID) -> dict[str, Any] | None:
+    """Atomically take ownership of an approved gate before running anything.
+
+    Returns None when someone already claimed it. This is what makes HITL-04 hold:
+    without it, a resumed run and a retried request could each read 'approved' and
+    both execute the same restart.
+    """
+    async with pool().connection() as conn:
+        cur = await conn.execute(
+            """
+            UPDATE approvals
+               SET decision = 'executing'
+             WHERE id = %(id)s AND decision = 'approved'
+            RETURNING *
+            """,
+            {"id": approval_id},
+        )
+        return await cur.fetchone()
+
+
+async def record_execution(approval_id: uuid.UUID, result: dict[str, Any]) -> None:
+    async with pool().connection() as conn:
+        await conn.execute(
+            """
+            UPDATE approvals
+               SET decision = 'executed', execution_result = %(result)s
+             WHERE id = %(id)s
+            """,
+            {"id": approval_id, "result": Jsonb(result)},
+        )

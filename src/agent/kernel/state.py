@@ -130,3 +130,12 @@ class IncidentState(TypedDict, total=False):
     round_index: int
     verification_result: VerificationResult
     synthesis: Synthesis | None
+
+    # Human-in-the-loop. `remediation_proposal` is written by `propose_remediation`
+    # and is what a human reads before deciding; `approval_decision` and
+    # `escalation_decision` are what `interrupt()` returns once they have. All are
+    # last-write-wins single-node writes — do not fan out a writer of these.
+    remediation_proposal: dict | None
+    approval_decision: dict | None
+    execution_result: dict | None
+    escalation_decision: dict | None

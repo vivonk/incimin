@@ -1,4 +1,4 @@
-import type { AgentStep, Incident } from './types'
+import type { AgentStep, Approval, Incident } from './types'
 
 // Phase 12 replaces the fetch mechanism here with an SSE subscription. The shapes
 // and the call sites stay; only how the data arrives changes.
@@ -22,4 +22,27 @@ export function listIncidents(filters: {
 
 export function listSteps(incidentId: string): Promise<AgentStep[]> {
   return get<AgentStep[]>(`/api/incidents/${incidentId}/steps`)
+}
+
+export function listApprovals(incidentId: string): Promise<Approval[]> {
+  return get<Approval[]>(`/api/incidents/${incidentId}/approvals`)
+}
+
+export async function decide(
+  incidentId: string,
+  decision: 'approved' | 'rejected',
+  note?: string,
+): Promise<{ status: string }> {
+  const res = await fetch(`/api/incidents/${incidentId}/approve`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ decision, note: note || null, decided_by: 'operator' }),
+  })
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    // 409 is the expected answer when someone else already decided this gate —
+    // surface it as-is rather than as a generic failure.
+    throw new Error(body.detail || `${res.status} ${res.statusText}`)
+  }
+  return body
 }

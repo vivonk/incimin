@@ -62,26 +62,38 @@ async def apply_schema() -> None:
     log.info("schema applied")
 
 
-async def setup_checkpointer_tables() -> None:
-    """Create the LangGraph checkpointer tables.
+_checkpointer = None
 
-    Phase 10 does not *use* the checkpointer — the graph is still compiled without
-    one — but creating its tables here means phase 11 finds them ready and the
-    "zero manual steps" property holds when the gates land.
+
+async def setup_checkpointer() -> None:
+    """Create the LangGraph checkpointer tables and build the shared saver.
 
     `AsyncPostgresSaver.setup()` does not run automatically, and a connection built
-    outside the pool needs autocommit or the DDL silently fails to commit. The pool
-    is configured with dict_row, which the saver also expects.
+    outside the pool needs autocommit or the DDL silently commits nothing — the
+    tables simply never appear and the first pause fails.
+
+    The saver itself is held for the process lifetime and shares the application
+    pool. Building one per run would mean a second pool against the same database,
+    and — worse — a pause written by one saver and resumed by another.
     """
+    global _checkpointer
     try:
         from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
     except ImportError:  # pragma: no cover - dependency is declared
-        log.warning("langgraph-checkpoint-postgres not installed; skipping checkpointer setup")
+        log.warning("langgraph-checkpoint-postgres not installed; gates will be unavailable")
         return
 
     async with await _autocommit_connection() as conn:
         await AsyncPostgresSaver(conn).setup()
-    log.info("checkpointer tables ready")
+
+    _checkpointer = AsyncPostgresSaver(pool())
+    log.info("checkpointer ready")
+
+
+def checkpointer():
+    if _checkpointer is None:
+        raise RuntimeError("checkpointer not initialised — call setup_checkpointer() in lifespan")
+    return _checkpointer
 
 
 async def _autocommit_connection():
