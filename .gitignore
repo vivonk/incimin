@@ -9,3 +9,6 @@ dist/
 build/
 .mypy_cache/
 .ruff_cache/
+
+# GSD research tool cache — transient, not planning content
+.planning/research/.cache/
