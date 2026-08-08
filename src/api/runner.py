@@ -116,31 +116,41 @@ class StepRecorder:
             "node", node, status="ok", ended=True, output=_summarize(state)
         )
 
-        if node == "tools":
-            for msg in messages:
-                await self.record(
-                    "tool_result",
-                    getattr(msg, "name", "tool"),
-                    parent_seq=node_seq,
-                    status="ok",
-                    ended=True,
-                    output={"content": message_text(getattr(msg, "content", ""))[:4000]},
-                )
-                log.info(
-                    "[%s] sub-agent result %s", self.incident_id, getattr(msg, "name", "tool")
-                )
-        else:
-            calls = getattr(messages[-1], "tool_calls", None) if messages else None
-            for call in calls or []:
-                await self.record(
-                    "tool_call",
-                    call["name"],
-                    parent_seq=node_seq,
-                    status="ok",
-                    ended=True,
-                    input=dict(call.get("args") or {}),
-                )
-                log.info("[%s] sub-agent call %s(%s)", self.incident_id, call["name"], call["args"])
+        # The kernel dispatches probes by fan-out rather than by tool call, so a probe's
+        # identity arrives in `probe_log` instead of on a ToolMessage. Each entry becomes a
+        # child of the node that produced it, which is what keeps the step log a graph.
+        for run in state.get("probe_log") or []:
+            await self.record(
+                "tool_result",
+                run.get("probe_id", "probe"),
+                parent_seq=node_seq,
+                status=run.get("status", "ok"),
+                ended=True,
+                output={
+                    "summary": str(run.get("summary", ""))[:4000],
+                    "evidence_count": run.get("evidence_count", 0),
+                    "round_index": run.get("round_index", 0),
+                },
+            )
+            log.info(
+                "[%s] probe %s -> %s (%s evidence)",
+                self.incident_id,
+                run.get("probe_id"),
+                run.get("status"),
+                run.get("evidence_count"),
+            )
+
+        calls = getattr(messages[-1], "tool_calls", None) if messages else None
+        for call in calls or []:
+            await self.record(
+                "tool_call",
+                call["name"],
+                parent_seq=node_seq,
+                status="ok",
+                ended=True,
+                input=dict(call.get("args") or {}),
+            )
+            log.info("[%s] sub-agent call %s(%s)", self.incident_id, call["name"], call["args"])
 
         await repo.set_current_step(self.incident_id, node)
 
@@ -158,7 +168,12 @@ class StepRecorder:
 
 
 def _summarize(state: dict) -> dict:
-    """Compact, JSON-safe view of a node's state delta."""
+    """Compact, JSON-safe view of a node's state delta.
+
+    Hypothesis posteriors are recorded per step on purpose: replayed in order they are the
+    belief trajectory, which is what makes "why did it conclude this?" answerable after the
+    fact rather than a matter of re-reading a prompt.
+    """
     out: dict[str, Any] = {}
     if (syn := state.get("synthesis")) is not None:
         out["synthesis"] = {
@@ -172,6 +187,23 @@ def _summarize(state: dict) -> dict:
         out["candidate_services"] = list(candidates)
     if evidence := state.get("evidence"):
         out["evidence_count"] = len(evidence)
+    if hypotheses := state.get("hypotheses"):
+        out["hypotheses"] = [
+            {
+                "id": h.id,
+                "kind": h.kind,
+                "service": h.subject_service,
+                "posterior": round(h.posterior, 4),
+                "status": h.status,
+            }
+            for h in hypotheses
+        ]
+    if (budget := state.get("budget")) is not None:
+        out["budget"] = {
+            "max_rounds": budget.max_rounds,
+            "rounds_used": budget.rounds_used,
+            "exit_reason": budget.exit_reason,
+        }
     return out
 
 
@@ -184,17 +216,24 @@ async def run_incident(incident_id: uuid.UUID, ctx: AlertContext) -> None:
             await repo.set_status(incident_id, "agent_running", "starting")
             log.info("[%s] %s -> agent (severity=%s)", ctx.service, ctx.alertname, ctx.severity)
 
-            # Imported late: src.agent.graph builds an LLM at import time and raises
-            # without an API key. Importing at module scope would take the whole API
-            # down at startup instead of failing this one incident.
+            # Imported late: the kernel imports the LLM factory, which raises without an API
+            # key. At module scope that would take the whole API down at startup instead of
+            # failing this one incident.
             from langchain_core.messages import HumanMessage
 
-            from src.agent.graph import app as meta_agent
+            from src.agent.kernel.graph import DEFAULT_TEAM
+            from src.agent.kernel.graph import app as meta_agent
 
+            alert = ctx.to_kernel_alert()
             inputs = {
+                # The rendered prompt rides along for tracing and the step log; the kernel
+                # reasons over `alert`, not over this text.
                 "messages": [HumanMessage(content=ctx.to_prompt())],
-                "remaining_steps": settings.webhook_max_steps,
+                "alert": alert,
+                "team_id": alert.get("team") or DEFAULT_TEAM,
                 "evidence": [],
+                "probe_log": [],
+                "seen_probe_keys": [],
                 "candidate_services": [],
                 "synthesis": None,
                 "verification_result": None,

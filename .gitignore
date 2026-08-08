@@ -16,3 +16,6 @@ build/
 node_modules/
 frontend/dist/
 .playwright-mcp/
+
+# MCP Inspector session captures — transient debug artifacts
+inspector-protocol-*.json
