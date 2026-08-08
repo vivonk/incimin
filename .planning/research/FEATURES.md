@@ -1,203 +1,184 @@
 # Feature Research
 
-**Domain:** AI SRE Agent / AIOps Incident Response Automation
-**Researched:** 2026-08-05
-**Confidence:** MEDIUM-HIGH (training data through Aug 2025 covers this domain; specific competitor versioning may lag)
+**Domain:** Incident/alert-triage dashboard for an autonomous SRE agent (v1.7 milestone)
+**Researched:** 2026-08-08
+**Confidence:** MEDIUM (web search across official vendor docs — PagerDuty, incident.io, Grafana OnCall, AWS SSM, StackStorm, Temporal, Airflow, n8n, Langfuse, LangGraph — cross-checked but not primary-source verified against source code)
 
----
+## Scope Note
+
+This is **not** a general-purpose incident-management platform (PagerDuty/Opsgenie replacement). It is a dashboard over a *single autonomous agent's* execution against SigNoz-sourced alerts, for a single-org demo-scale deployment. Findings below are filtered through that lens: patterns from PagerDuty/incident.io/StackStorm/Airflow/etc. are surveyed for the *behavior SRE users expect*, then re-scoped to what actually matters at this project's scale. Full platform features (on-call scheduling, multi-tenant orgs, escalation paging infra) are explicitly anti-features here — see below.
 
 ## Feature Landscape
 
-### Table Stakes (Enterprise Buyers Expect These)
-
-Features that enterprise SRE and platform engineering teams assume exist. Missing these = product gets disqualified early in evaluation.
+### Table Stakes (Users Expect These)
 
 | Feature | Why Expected | Complexity | Notes |
 |---------|--------------|------------|-------|
-| Alert ingestion from standard sources | PagerDuty, OpsGenie, Alertmanager, Datadog — buyers won't reroute existing alerting pipelines | LOW | Webhook receiver + normalization layer; OTel alert format as canonical |
-| Correlated root cause summary | Core RCA narrative from correlated signals (logs, traces, metrics); buyers assume any "AI SRE" product does this | HIGH | incimin's LangGraph agent + ClickHouse SQL + Qdrant retrieval is the implementation; correctness is the hard part |
-| Service dependency awareness | Who talks to whom — buyers know cascading failures are the norm in microservices and expect the tool to know too | HIGH | Memgraph BFS covers this; populating the graph accurately is the hard dependency |
-| Runbook/KB retrieval | "What has this team done before in similar incidents?" — institutionalized knowledge surfaced at alert time | MEDIUM | Qdrant semantic search; quality degrades without runbook curation |
-| Explainability / glass-box reasoning | Enterprise risk/audit requirement: "How did you arrive at that?" — black-box AI output is a blocker for enterprise buyers | MEDIUM | LangGraph tool-call traces + Streamlit `st.status` expanders cover this for demo; production needs a persistent audit log |
-| Human-in-the-loop remediation workflow | Agent recommends; human approves; human executes — this is non-negotiable for enterprises with change management processes | LOW | Recommendation-only output is already the design; the risk is accidentally building auto-execute paths later |
-| Alert noise reduction / deduplication | Operations teams drown in alert storms; buyers expect intelligent grouping before any other value | MEDIUM | Correlating alerts by topology proximity (same service cluster) and time window is the minimum viable implementation |
-| Integration with existing observability stack | Buyers won't replace Datadog, Grafana, or PagerDuty; the AI layer must sit on top, not replace | MEDIUM | SigNoz + OTel collector is a good-citizen stack; production will need Datadog/Prometheus adapters |
-| Incident timeline reconstruction | Ordered sequence of what changed/failed and when — SRE post-mortems require it; expected during live incidents too | MEDIUM | ClickHouse time-range queries over spans and logs; requires good timestamp indexing |
-| RBAC / access control | Enterprise: different teams own different services; the agent must not show team B's runbooks to team A | HIGH | Not in v1 scope but will be a hard blocker for any production contract |
+| Alert list with status column, clear vocabulary | Every surveyed tool (PagerDuty, Grafana OnCall, incident.io) leads with a status column; SRE users scan for "what's still open" first | LOW | Postgres status column already decided (PROJECT.md). Recommend an agent-lifecycle vocabulary, not a human-response vocabulary — see Lifecycle section below |
+| Severity indicator with color coding (red=critical/SEV1, yellow/orange=major/SEV2) | Universal convention across PagerDuty, incident.io, and general SRE practice; responders triage by color before reading text | LOW | SigNoz alert rules already carry a severity field on the webhook payload — surface it, don't invent a new taxonomy |
+| Timestamps: created, last-updated, duration in current status | PagerDuty tracks "Created"; incident.io stamps every status transition (e.g. "Fixed At"); postmortem research shows responders need phase durations, not just a single timestamp | LOW | Derivable from the audit/event table already required for HITL |
+| Service/source attribution per alert | PagerDuty's alert table always shows Source/Service/Component; responders need to know blast radius at a glance | LOW | Already available from SigNoz webhook metadata |
+| Filterable/sortable list (by status, severity, service) | Baseline list hygiene in every tool surveyed; without it a growing alert list becomes unusable within days | LOW–MEDIUM | Trivial with Postgres-backed list + basic query params; no search engine needed at this scale |
+| Per-alert detail view with distinct sections for findings vs. raw data | incident.io and PagerDuty both separate "what we know" from "raw event data"; matches the project's own planned Findings/Next Steps/Step Graph/Raw tabs | LOW | Already scoped in PROJECT.md's target features |
+| Explicit "agent is running" / in-progress state, distinguishable from terminal states | Airflow (`running`), Temporal (in-flight event), n8n (`Running` execution status) all treat "in progress" as a first-class, visually distinct state — not a placeholder | LOW | Needed so the SSE-driven live UI has something meaningful to render before terminal state arrives |
+| Chronological event/audit timeline per alert ("who/what did what, when") | Universal expectation confirmed across PagerDuty postmortem guidance, Grafana OnCall's `AlertGroupLogRecord`, and incident.io — responders reconstruct events from an ordered log, not from status alone | LOW–MEDIUM | Directly required by the project's own decision to write "every proposal, decision, and result" to an audit table |
+| Approval action showing: proposed action, target, and rationale, before a human can approve | AWS SSM `aws:approve`, StackStorm `core.ask`, and LangGraph's `interrupt()` HITL pattern all agree: an approval gate is worthless if it doesn't show *what* is about to happen and *why* before the click | LOW–MEDIUM | Directly enabled by `interrupt()` + `AsyncPostgresSaver`, already a v1.7 decision. The "why" is the agent's own synthesized root-cause reasoning — no new capability needed, just surfacing it |
+| Post-approval audit record: who approved/rejected, when, and the outcome | AWS SSM requires named approvers and timestamps by design; PagerDuty/incident.io timelines both treat approval-equivalent actions (ack, resolve) as audit events | LOW | Same audit table as above; add actor identity + decision + timestamp columns |
+| Step-by-step visualization of the agent's fixed node sequence, with per-node status (pending/running/done/failed) | Direct analog to Airflow's Graph View and Temporal's Timeline view — both are considered baseline, not exotic, for any multi-step automated workflow | MEDIUM | Requires the agent to emit structured step events over SSE; graph topology itself is static (defined in code), so this is a *status overlay* on a fixed diagram, not a general graph renderer |
 
----
-
-### Differentiators (Competitive Advantage vs PagerDuty AIOps, Datadog AIOps, Grafana IRM)
-
-Features that set incimin apart. Most competitors do alert correlation; few do deterministic topology-grounded RCA.
+### Differentiators (Competitive Advantage)
 
 | Feature | Value Proposition | Complexity | Notes |
 |---------|-------------------|------------|-------|
-| Live service graph traversal (not static topology maps) | Competitors use static or inferred topology; incimin traverses the *live* graph state at incident time — capturing runtime deps, not just deploy-time config | HIGH | Memgraph + memgraph-mage is the core differentiator; requires continuous graph refresh from OTel service map data |
-| Deterministic, hallucination-free RCA critical path | Topology reasoning via Cypher BFS, not LLM inference — LLM only synthesizes the explanation; buyers trust it because it can be audited step-by-step | HIGH | The zero-hallucination claim is verifiable because every traversal step is logged; competitors can't make this claim cleanly |
-| Runbook grounding with semantic retrieval | RCA output cites the specific runbook section that applies — not generic advice; reduces mean-time-to-action (MTTA) | MEDIUM | Qdrant metadata filtering by service + incident type is the key; requires curated runbook ingestion pipeline |
-| Glass-box tool-call trace UI | Every query the agent executed is visible — buyers in regulated industries (fintech, healthcare) require this for change-advisory-board sign-off | MEDIUM | Streamlit `st.status` is a demo-quality implementation; production needs a persistent queryable audit log |
-| Sub-60-second RCA from alert to recommendation | Buyers measure MTTA; if the first-responder human takes 15 minutes to triage and the agent does it in 45 seconds, the value is quantifiable and demonstrable | HIGH | Latency is a product constraint, not just a feature; every tool call (graph, SQL, vector) must be optimized for cold-path execution |
-| Context-aware incident similarity ("seen this before") | Agent surfaces past incidents with the same failure pattern + their resolution — not just runbooks but precedents | MEDIUM | Requires incident history indexed in Qdrant alongside runbooks; depends on runbook/KB quality |
-| Topology-rooted blast radius estimation | When a service is degraded, the agent can enumerate all downstream dependents and their current health — tells the on-call team what *else* to watch | MEDIUM | BFS traversal with depth limit + health status join from telemetry; Memgraph makes this a natural extension |
+| First-class "paused, awaiting human approval" status in the alert lifecycle | None of PagerDuty/Opsgenie/incident.io model this — their state machines assume a *human* is the actor (triggered→acknowledged→resolved). This project's core novelty is an autonomous agent that pauses itself; making that pause a visible, named status (not just a UI spinner) is a genuine product differentiator that directly demonstrates the "human-in-the-loop" value proposition to the enterprise buyer | LOW–MEDIUM | Builds directly on the `interrupt()`/`AsyncPostgresSaver` decision already made; this is mostly a modeling/UX decision, not new infrastructure |
+| Live SSE-driven step graph tied to the *actual* running agent (not polling, not a static diagram) | Matches what LangGraph Studio and Langfuse do for developer-facing agent debugging, but exposed to an SRE end user as *product* rather than a dev tool — this is close to the frontier of what any competitor in this exact space is currently shipping | MEDIUM | Depends on SSE plumbing (already planned) and an agent event schema; keep the graph itself fixed/static (see anti-features) to avoid Airflow/n8n-style complexity |
+| Inline agent-authored root-cause narrative + recommended-next-step surfaced directly at the approval decision point | Off-the-shelf approval gates (SSM, StackStorm) show only *what* will run, not *why it's the right call* — this project's agent already produces that reasoning as its core value; surfacing it at the exact moment of highest attention (the approval click) makes the gate meaningfully more informative than any surveyed tool's equivalent | LOW | The reasoning already exists as agent output; this is a presentation decision, not new agent capability |
+| Deterministic replay of a full historical run (fixture-driven), viewable start to finish exactly as it happened live | This is close to Temporal's/LangGraph Studio's "time travel" idea but scoped down to demo reliability rather than general debugging — valuable for enterprise demos where the story must replay identically every time | LOW–MEDIUM | Already explicitly scoped in PROJECT.md ("Replay script driving a committed SigNoz fixture end to end"); reuses the same SSE event schema as the live path, so it's mostly a data-source swap, not new UI |
 
----
+### Anti-Features (Commonly Requested, Often Problematic)
 
-### Anti-Features (Things Enterprise SRE Teams Actively Don't Want)
+| Feature | Why Requested | Why Problematic | Alternative |
+|---------|---------------|------------------|-------------|
+| Alert grouping/deduplication engine (Grafana OnCall–style Alert Groups with grouping-ID templates) | "Feels incomplete without it" once you've seen PagerDuty/OnCall bundle related alerts | Grouping logic is a project in itself (templated grouping IDs, merge/split UX, group-level state machine); at demo scale, one SigNoz webhook alert maps to one agent run — there is nothing to group yet | One alert row = one agent run row. Revisit only if/when multiple alerts routinely fire for the same root cause |
+| On-call scheduling, escalation policies with paging (SMS/phone/push), and ack-timeout auto-re-escalation | PagerDuty's core value prop; feels like "the missing piece" next to a status column | This is an entire second product (rotation calendars, notification delivery infra, timeout timers) with zero overlap with the agent's actual job — root cause + remediation, not who gets paged | The agent's own "escalation" action *is* the allowlisted remediation-adjacent action already in scope (v1.7 Key Decisions) — it stops at "flag for human," it doesn't need to own paging infrastructure |
+| Multi-approver quorum / approval delegation (AWS SSM's N-of-M approvers, notification routing via SNS) | Looks more "enterprise-grade" | Massively over-engineered for a single-org, 2–3-engineer demo; adds identity/notification infrastructure with no current user story | Single named approver clicks Approve/Reject in the SPA; the audit row already captures who/when — that satisfies the stated security/audit rationale in PROJECT.md's Key Decisions without building a quorum system |
+| Full postmortem/retrospective authoring tool (Rootly/incident.io-style collaborative doc editor, templates, blameless-review workflow) | Adjacent and "obviously good practice" | A document editor and review workflow is unrelated to the agent's execution and is a multi-week feature on its own | The chronological audit/event timeline already table-stakes above *is* the raw material for a human-written postmortem later — don't build the authoring surface |
+| Graph *authoring* UI — drag nodes, edit edges, build new workflows visually (n8n, Airflow DAG editors, StackStorm workflow definitions) | Once you're rendering a step graph, "let me edit it" feels like a natural next step | The agent's graph topology is defined in code (LangGraph `StateGraph`), and PROJECT.md's own constraint says tool/topology changes must not require rewriting the state machine casually — a visual editor implies runtime-mutable topology, which reintroduces exactly the non-determinism the project explicitly forbids | Step graph is read-only: a fixed diagram (from the compiled graph) with a live status overlay per node. No editing capability |
+| Full "time travel" debugging — fork execution from an arbitrary historical checkpoint and re-run (LangGraph Studio's flagship feature) | Genuinely useful for agent development, and it's right there in the tooling already in the stack (`AsyncPostgresSaver` checkpoints make it *possible*) | It's a developer/debugging capability, not something the target SRE end user needs during a live incident; building fork-and-resume UI is materially more work than a linear replay | Ship the linear replay script (already scoped) for demo determinism; defer checkpoint-forking UI to a future internal-tooling milestone, not this one |
+| Nested/expandable trace-tree rendering with aggregate vs. expanded toggle (Langfuse-style, needed when agents have deep/looping tool-call trees) | Langfuse is the closest analog tool in the existing stack decisions (Langfuse is already used for tracing per recent commits) | This agent has a shallow, fixed depth of tool calls (3 deterministic tools + synthesis + verifier) — building a generalized collapsible nested-span tree is solving a problem this agent doesn't have | A flat, ordered step list is sufficient; reserve Langfuse itself (already integrated for tracing) as the place to go deep on LLM-call-level nesting if ever needed — don't duplicate that in the dashboard |
+| Customizable/configurable incident status lifecycle (incident.io lets orgs redefine triage/active/post-incident stages) | Feels "flexible," "enterprise-ready" | There is one agent, one fixed set of phases it goes through — configurability solves a multi-team/multi-workflow problem this single-agent product doesn't have | Hardcode the status enum (see Lifecycle Modeling below); revisit only if a second distinct agent/workflow type is added |
+| Real-time collaborative multi-user presence (cursors, "so-and-so is viewing this incident") | Feels modern, matches Slack-integrated tools like incident.io | Significant added complexity (presence channels, conflict resolution) for a 2–3-person demo audience where only one person will realistically click Approve | SSE for status/data updates is enough; no presence layer needed |
 
-These are features that seem appealing in demos or sales conversations but create serious problems in production enterprise deployments.
+## Incident Lifecycle / Status Modeling (Detail)
 
-| Feature | Why It Gets Requested | Why Enterprise Teams Don't Want It | What to Build Instead |
-|---------|----------------------|-------------------------------------|----------------------|
-| Automated remediation execution (auto-rollback, auto-restart, auto-scale) | "The AI should just fix it" — sounds like the ultimate productivity win | Change management processes (ITIL, SOC2, ISO27001) require human approval for production changes; auto-execution bypasses change advisory boards, creates audit failures, and causes trust destruction after the first false-positive auto-rollback takes down a healthy service | Recommendation-only output with structured remediation steps; optionally a one-click "approve and run" that still logs the human approval actor |
-| Alert suppression without explanation | "Too many alerts, just silence the low-priority ones" | Suppressed alerts that turn out to be real incidents are career-ending for the on-call engineer who agreed to the suppression policy; unexplained suppression creates blind spots | Surface suppression candidates with explicit reasoning ("suppressing: checkout-worker-cpu-throttle because root cause is already identified as payment-service OOM; these are effects, not causes"); human confirms suppression |
-| Single-pane-of-glass dashboard replacing existing tooling | Consolidation sounds good; vendors love it for lock-in | Enterprise observability stacks are $500K+ investments; forcing migration or parallel maintenance of a new dashboard tool is an adoption blocker; also your dashboard will never be as good as Datadog's | Embed in the workflow: agent outputs go into PagerDuty incident notes, Slack threads, Jira tickets — wherever the team already works |
-| Predictive incident alerting (ML-based anomaly-as-alert) | "Catch problems before they happen" | ML anomaly detection in high-cardinality environments has a high false-positive rate that erodes trust rapidly; if the AI cries wolf 10 times before a real incident, on-call engineers start ignoring it | Reactive RCA excellence beats unreliable predictive alerts; add prediction only after the reactive path is trusted |
-| LLM-inferred topology (asking the LLM "what depends on what") | Seems to avoid the graph population problem | LLM topology inference hallucinations cause catastrophic RCA errors — the agent confidently follows the wrong dependency chain; this is the exact failure mode that destroys trust in AI SRE products | Explicit topology from OTel service map data + Memgraph; the graph population problem is an engineering problem worth solving correctly |
-| Auto-escalation policy changes | "Let the AI optimize who gets paged" | Escalation policies are human agreements about who is responsible for what; automated changes to paging rules violate those agreements and create accountability confusion during major incidents | Read-only access to escalation context; recommend escalation but never modify policies |
-| Chat-only interface as the primary incident surface | LLM chatbots are familiar; buyers initially want a chat interface | During a live P1 incident, a chat interface requires the engineer to type queries while simultaneously firefighting; structured push-based output (incident report card delivered to Slack/PagerDuty automatically on alert fire) is higher value | Push-first, pull-optional: agent fires automatically on alert, pushes structured RCA to where the team already is; chat is available for follow-up questions |
+Table-stakes status transitions, informed by the PagerDuty/incident.io comparison, re-scoped for an agent-driven (not human-driven) lifecycle:
 
----
+```
+Received          — webhook ingested, persisted, agent run enqueued
+  └─> Investigating   — agent traversing graph / querying logs (mirrors PagerDuty "Triggered" energy, but the *actor* is the agent, not a waiting human)
+        └─> Awaiting Approval  — interrupt() fired; a remediation or escalation action is proposed and durable via AsyncPostgresSaver
+              ├─> Approved -> Executing -> Resolved   (allowlisted action ran; verifier confirms)
+              ├─> Rejected -> Investigating|Closed     (human declines; agent may re-propose or end)
+              └─> (timeout/abandoned -> stays Awaiting Approval; no auto-escalation timers — explicitly deferred, see anti-features)
+        └─> Resolved (no action needed — findings-only outcome)
+  └─> Closed         — terminal, whether resolved, rejected-and-abandoned, or errored
+```
+
+**Why this differs from PagerDuty/incident.io:** those tools' vocabularies (triggered/acknowledged/resolved; declared/investigating/fixing/monitoring/closed) assume the *responder* is a human doing the work and the tool is tracking their progress. Here the agent is the actor for Investigating; the human only enters at Awaiting Approval. Reusing PagerDuty's "Acknowledged" would be misleading — nobody has acknowledged anything, an *agent* is investigating. Naming the mid-run states accurately is what makes this product's dashboard demonstrate its actual value rather than mimicking a paging tool it isn't.
+
+**Dependency:** requires the Postgres status column (already decided) and the `interrupt()`/checkpointer plumbing (already decided) — no net-new infrastructure, this is a status-enum and UI-label decision.
 
 ## Feature Dependencies
 
 ```
-Alert Ingestion
-    └──requires──> Signal Normalization (canonical alert schema)
-                       └──requires──> Service Topology Graph (populated)
-                                          └──requires──> OTel Service Map → Memgraph ETL
+Alert persistence (Postgres, SigNoz metadata) [existing v1.7 scope]
+    └──requires──> Alert list with status/severity/timestamps        [table stakes]
+                       └──enhances──> Filter/sort on list             [table stakes]
 
-Correlated RCA Narrative
-    └──requires──> Service Topology Graph (traversal)
-    └──requires──> Telemetry Query (ClickHouse SQL for logs/traces)
-    └──requires──> Runbook Retrieval (Qdrant semantic search)
+SSE event stream from agent run [existing v1.7 scope: FastAPI + SSE]
+    └──requires──> Live step graph with per-node status               [table stakes]
+    └──requires──> Live status updates on alert list (no polling)     [differentiator]
 
-Runbook Retrieval
-    └──requires──> Runbook Ingestion Pipeline (markdown → embeddings → Qdrant)
-    └──enhances──> Incident Similarity ("seen this before")
+interrupt() + AsyncPostgresSaver [existing v1.7 decision]
+    └──requires──> Approval gate UI (proposed action + rationale)     [table stakes]
+                       └──requires──> Audit row on decision (who/when/outcome) [table stakes]
+                       └──enhances──> Inline root-cause narrative at approval [differentiator]
 
-Glass-box Audit Log
-    └──requires──> LangGraph tool-call trace capture
-    └──enhances──> RBAC (restrict which traces are visible to which teams)
+Audit/event table [existing v1.7 decision: "every proposal, decision, result"]
+    └──requires──> Chronological timeline per alert                   [table stakes]
 
-Blast Radius Estimation
-    └──requires──> Service Topology Graph
-    └──enhances──> Correlated RCA Narrative
+Fixed committed SigNoz fixture [existing v1.7 scope]
+    └──requires──> Replay script over same SSE event schema           [differentiator]
 
-RBAC / Access Control
-    └──requires──> Identity provider integration (SSO/SAML)
-    └──blocks (if absent)──> Enterprise production deployment
+Live step graph ──conflicts──> Graph authoring/editing UI (n8n/Airflow-style)
+Approval gate (single approver) ──conflicts──> Multi-approver quorum (SSM-style)
+Agent-lifecycle status enum ──conflicts──> Configurable/custom status lifecycle (incident.io-style)
 ```
 
 ### Dependency Notes
 
-- **Correlated RCA requires all three data planes simultaneously:** Graph traversal, telemetry query, and runbook retrieval must all succeed; a failure in any one degrades the output quality from authoritative to speculative. Design for graceful degradation — if Qdrant is unavailable, return RCA without runbook grounding rather than failing the whole request.
-- **Service topology graph quality gates everything downstream:** A stale or incomplete graph produces wrong blast radius estimates and incorrect RCA paths. This is the highest-leverage investment in data quality.
-- **Runbook ingestion is a customer onboarding problem:** The product can be technically perfect and still fail to deliver value if the customer's runbooks are not ingested and kept current. Runbook ingestion UX and freshness monitoring are product concerns, not just engineering.
-- **RBAC conflicts with single-tenant simplicity:** v1 single-tenant design avoids RBAC complexity. Adding RBAC later is a significant refactor of the data layer (Qdrant collection partitioning, Memgraph namespace isolation). Design the schema with RBAC hooks from day one even if enforcement is deferred.
-
----
+- **Live step graph requires SSE event stream:** the graph is only "live" if the agent emits structured per-node start/end/error events as it runs; this is new work on the agent side (event emission), not just the frontend — flag for phase planning as agent-side instrumentation, not purely a UI task.
+- **Approval gate requires `interrupt()` + `AsyncPostgresSaver`:** already decided in PROJECT.md; the dashboard work is additive UI/audit on top of durable HITL infrastructure, not a new mechanism.
+- **Timeline requires the audit table:** don't build a separate "activity log" data model — the audit table already mandated for approvals should be the single source for the timeline view too (avoid two overlapping event stores).
+- **Live step graph conflicts with graph-authoring UI:** deliberately keep the graph read-only; this is a scope boundary, not a missing feature — call it out explicitly if a stakeholder asks for "editable" workflows.
 
 ## MVP Definition
 
-### Launch With (v1 — Demo Sprint)
+### Launch With (v1.7)
 
-Minimum set required to demonstrate differentiated value and close the first enterprise pilot.
+Minimum viable product for this milestone — what's needed to demonstrate the core "durable, observable, human-gated" value proposition.
 
-- [ ] **Correlated RCA from alert to recommendation** — the core value proposition; without this there is no product
-- [ ] **Deterministic topology traversal (Memgraph BFS)** — the hallucination-free differentiator; must be demonstrable and auditable
-- [ ] **Runbook grounding (Qdrant semantic retrieval)** — elevates output from "generic advice" to "team-specific next action"
-- [ ] **Glass-box tool-call trace UI (Streamlit st.status)** — required for enterprise trust; audit trail for every reasoning step
-- [ ] **Recommendation-only output (no auto-remediation)** — explicit constraint; must be enforced in code, not just by convention
-- [ ] **Sub-60-second end-to-end latency** — the quantifiable metric that makes the value proposition concrete in a demo
+- [ ] Alert list: status, severity, service, timestamps, sortable/filterable — table stakes, LOW complexity, depends only on existing Postgres persistence
+- [ ] Agent-lifecycle status enum (Received/Investigating/Awaiting Approval/Approved/Rejected/Executing/Resolved/Closed) — table stakes + differentiator, LOW complexity
+- [ ] Per-alert detail view: Findings / Next Steps / Step Graph / Raw tabs (already scoped) — table stakes, LOW–MEDIUM
+- [ ] Live step graph with per-node status via SSE — table stakes, MEDIUM complexity, requires agent-side event emission
+- [ ] Approval gate: proposed action + rationale + approve/reject, single approver — table stakes, LOW–MEDIUM, built on existing `interrupt()` decision
+- [ ] Audit table + chronological timeline view per alert — table stakes, LOW–MEDIUM
+- [ ] Replay script against committed SigNoz fixture, driving the same SSE/UI path — differentiator, LOW–MEDIUM, already scoped
 
 ### Add After Validation (v1.x)
 
-Add after first enterprise pilot confirms the RCA core is trusted.
-
-- [ ] **Alert deduplication / noise grouping** — trigger: pilot team reports alert storm fatigue overwhelming the RCA output
-- [ ] **Incident timeline reconstruction** — trigger: pilot team requests structured post-mortem artifacts
-- [ ] **Blast radius estimation** — trigger: pilot team has experienced cascading failures and wants proactive scope awareness
-- [ ] **Incident similarity / precedent retrieval** — trigger: pilot team has accumulated enough incident history for pattern matching to be meaningful (3-6 months)
-- [ ] **Slack/PagerDuty push integration** — trigger: pilot team needs agent output in their existing workflow, not a Streamlit tab
+- [ ] Live status updates without manual refresh (confirm SSE is snappy/reliable in practice before treating as done) — trigger: SSE plumbing proven stable under the replay + one live path
+- [ ] Richer inline root-cause narrative styling at the approval decision point (currently just "surface existing agent output") — trigger: UX feedback from first demo audience
 
 ### Future Consideration (v2+)
 
-Defer until product-market fit is confirmed and a multi-customer dataset informs prioritization.
-
-- [ ] **RBAC / access control** — deferred to v2 because v1 is single-tenant; required before expanding to second team/org within an enterprise
-- [ ] **Predictive anomaly flagging** — defer until reactive RCA is trusted; unreliable prediction destroys the trust reactive builds
-- [ ] **Multi-tenant SaaS** — strategic decision post-PMF; changes the entire data architecture
-- [ ] **Automated remediation execution (with approval workflow)** — only after trust is established and change management integration is designed; not v1 for security and audit reasons
-- [ ] **Custom alert routing / escalation recommendation** — defer until the team understands customer-specific escalation patterns
-
----
+- [ ] Alert grouping/deduplication — defer until multiple concurrent alerts for the same root cause is an observed real scenario, not hypothetical
+- [ ] Checkpoint-fork/time-travel debugging UI — defer to an internal-tooling milestone; valuable for agent development, not for the SRE end-user demo
+- [ ] Configurable status lifecycle — defer until a second distinct agent/workflow type exists
+- [ ] On-call scheduling / paging integration — defer indefinitely; this is a different product (or an integration point with PagerDuty/Opsgenie, not a rebuild of them)
 
 ## Feature Prioritization Matrix
 
 | Feature | User Value | Implementation Cost | Priority |
 |---------|------------|---------------------|----------|
-| Correlated RCA narrative | HIGH | HIGH | P1 |
-| Deterministic topology traversal | HIGH | MEDIUM | P1 |
-| Runbook grounding | HIGH | MEDIUM | P1 |
-| Glass-box tool-call trace | HIGH | LOW | P1 |
-| Recommendation-only enforcement | HIGH | LOW | P1 |
-| Sub-60s latency | HIGH | MEDIUM | P1 |
-| Alert deduplication | MEDIUM | MEDIUM | P2 |
-| Incident timeline reconstruction | MEDIUM | MEDIUM | P2 |
-| Blast radius estimation | HIGH | LOW | P2 |
-| Slack/PagerDuty push integration | HIGH | MEDIUM | P2 |
-| Incident similarity / precedent | MEDIUM | MEDIUM | P2 |
-| RBAC / access control | HIGH | HIGH | P3 |
-| Predictive anomaly flagging | MEDIUM | HIGH | P3 |
-| Multi-tenant | LOW (v1) | HIGH | P3 |
-| Auto-remediation with approval | MEDIUM | HIGH | P3 |
+| Alert list (status/severity/timestamps) | HIGH | LOW | P1 |
+| Agent-lifecycle status enum incl. "Awaiting Approval" | HIGH | LOW | P1 |
+| Approval gate UI + audit record | HIGH | MEDIUM | P1 |
+| Live step graph (SSE-driven) | HIGH | MEDIUM | P1 |
+| Chronological audit timeline | MEDIUM–HIGH | LOW–MEDIUM | P1 |
+| Replay script over fixture | HIGH (demo reliability) | LOW–MEDIUM | P1 |
+| Inline root-cause narrative at approval | MEDIUM | LOW | P2 |
+| Alert grouping/dedup | LOW (no current scenario) | HIGH | P3 |
+| Checkpoint fork/time-travel UI | LOW (dev tool, not SRE-user need) | HIGH | P3 |
+| Multi-approver quorum | LOW (single-org, small team) | MEDIUM–HIGH | P3 |
+| Graph authoring/editing UI | NEGATIVE (violates determinism constraint) | HIGH | Do not build |
 
 **Priority key:**
-- P1: Required for v1 demo and pilot
-- P2: Add after pilot validation
-- P3: Future roadmap / v2+
+- P1: Must have for v1.7 launch
+- P2: Should have, add when possible within v1.7 if time allows
+- P3: Nice to have, explicitly deferred past v1.7
 
----
+## Competitor/Analog Feature Analysis
 
-## Competitor Feature Analysis
-
-| Feature | PagerDuty AIOps | Datadog AIOps | Grafana IRM | incimin Approach |
-|---------|-----------------|---------------|-------------|-----------------|
-| Alert correlation / noise reduction | ML-based event grouping across alert sources | Watchdog anomaly + alert correlation | Alert grouping by label | Topology-grounded correlation — alerts on the same blast radius path are co-grouped |
-| Root cause identification | Probable cause suggestions (LLM-assisted, not deterministic) | Watchdog RCA (statistical, not graph-traversal) | Manual; no auto-RCA | Deterministic BFS on live service graph — auditable, not probabilistic |
-| Runbook integration | Runbook links attached to incidents; no semantic retrieval | Similar incidents with links | Playbooks (manual) | Semantic runbook retrieval grounded to the specific incident context |
-| Topology / service map | Static service catalog | Service Map (inferred from APM traces) | Service dependency (manual config) | Live Memgraph graph updated from OTel service map; traversable at query time |
-| Explainability | Minimal — shows correlated alerts, not reasoning chain | Minimal — confidence score without trace | None | Full tool-call trace: which Cypher query, which SQL, which runbook chunk, in what order |
-| Human approval workflow | Manual escalation / acknowledgment | Incident management UI | Manual | Recommendation-only by design; approval gate is explicit |
-| Auto-remediation | Automation actions (runbook automation, webhooks) | Workflow automations | None | Explicitly out of scope for v1; reduces enterprise adoption friction |
-| Integration model | Native + webhook | Native + many integrations | Native Grafana stack | OTel-native; bring-your-own observability stack |
-
----
-
-## Enterprise-Specific Considerations
-
-These are constraints that differ between SMB and enterprise buyers and materially affect feature priority.
-
-**Change management (ITIL / CAB):** Enterprise buyers have formal change advisory boards. Any feature that modifies production state — even a restart — requires a change ticket and approval trail. Auto-remediation, even with a confirmation click, needs an auditable approval record linked to the change management system (ServiceNow, Jira Service Management). This is why auto-remediation is P3, not P2.
-
-**Audit and compliance (SOC2 / ISO27001):** Every action the agent takes against production must be logged with actor, timestamp, and rationale. The LangGraph tool-call trace is the audit log. It must be durable (not just in-memory/Streamlit session state) for any production deployment.
-
-**On-call fatigue:** The primary pain point is not "AI can replace my SREs" — it's "my SREs are paged 20 times a night and burned out." Features that reduce pages and reduce time-to-resolution per page are the value drivers. This means noise reduction and fast RCA matter more than sophisticated prediction.
-
-**Trust ratchet:** Enterprise SRE teams adopt AI tooling incrementally. The trust ratchet is: read-only first, then recommendation, then assisted execution, then autonomous execution. Products that try to skip steps get rejected. incimin's recommendation-only v1 is correctly positioned at step 2. Never skip to step 4.
-
-**Data residency:** Large enterprises (financial services, healthcare) will require on-premise or VPC deployment. The Docker Compose local architecture is a trust signal, not just a demo convenience — it demonstrates the product can run in a data-controlled environment.
-
----
+| Feature | PagerDuty / incident.io | Airflow / Temporal / n8n | LangGraph Studio / Langfuse | This Project's Approach |
+|---------|--------------------------|----------------------------|-------------------------------|--------------------------|
+| Status vocabulary | Human-response-centric (triggered/acknowledged/resolved; declared/investigating/fixing/monitoring/closed) | Task-execution-centric (queued/running/success/failed/retry) | Run-centric (node visited/not, checkpoint states) | Hybrid: agent-execution states (Investigating/Executing) + a first-class human-gate state (Awaiting Approval) not present in either source family |
+| Severity/priority | Explicit severity field, color-coded (red/yellow), drives escalation policy | Not applicable (pipeline tasks don't have "severity") | Not applicable | Surface SigNoz's own severity field directly, color-coded; no escalation-policy engine behind it |
+| Step/workflow visualization | Not applicable (no execution graph) | Full graph view, click-through metadata, per-run state history | Live animated diagram, state diffs, time-travel replay | Fixed/static graph diagram (from compiled LangGraph) with live SSE status overlay — table-stakes visualization without authoring or time-travel |
+| Human approval | Ack/resolve is the closest analog, but it's acknowledging a page, not approving a specific automated action | StackStorm has native `core.ask`; Rundeck notably lacks native approval (feature request territory); AWS SSM has formal N-of-M `aws:approve` | LangGraph's `interrupt()` is the exact mechanism already adopted by this project | Single-approver, rationale-forward approval gate — closer to SSM's formality (named actor, audit record) but without quorum overhead |
+| Timeline/audit | Structured, timestamped, drives postmortems | Event history (Temporal) / task run history (Airflow) — technical, not narrative | Trace tree, technical | One audit table serving both the approval record and the human-readable timeline — narrower scope than PagerDuty's full postmortem tooling, but same underlying expectation (who/what/when) |
 
 ## Sources
 
-- Competitor product knowledge: PagerDuty AIOps, Datadog AIOps/Watchdog, Grafana IRM, Moogsoft (acquired by Dell), BigPanda, OpsRamp (HPE) — training data through Aug 2025, MEDIUM confidence on specific feature versioning
-- Enterprise SRE adoption patterns: Site Reliability Engineering (Google SRE book), DORA metrics research, ITIL 4 change management requirements — HIGH confidence on enterprise process constraints
-- incimin PROJECT.md constraints and design decisions — HIGH confidence (primary source)
+- PagerDuty: Alerts Table, Navigate the Incidents Page, Incidents, Escalation Policy Basics — https://support.pagerduty.com/main/docs/alerts-table, https://support.pagerduty.com/main/docs/navigate-the-incidents-page, https://support.pagerduty.com/main/docs/incidents, https://support.pagerduty.com/main/docs/escalation-policies — MEDIUM confidence (official docs via web search synthesis)
+- incident.io: Incident Lifecycle, Statuses guide — https://docs.incident.io/incidents/lifecycle, https://incident.io/guide/foundations/statuses — MEDIUM confidence
+- Grafana OnCall: Alert Groups, Alert groups HTTP API — https://grafana.com/docs/oncall/latest/ — MEDIUM confidence
+- AWS Systems Manager: `aws:approve` action reference — https://docs.aws.amazon.com/systems-manager/latest/userguide/automation-action-approve.html — MEDIUM confidence
+- StackStorm: Inquiries (core.ask) — https://docs.stackstorm.com/inquiries.html — MEDIUM confidence
+- Rundeck: GitHub issue #4288 "Workflow approval" (feature request, confirms no native approval gate) — https://github.com/rundeck/rundeck/issues/4288 — MEDIUM confidence
+- Shoreline.io: product blog and third-party coverage on runbook automation with human-in-the-loop — https://shoreline.io/blog/why-i-built-shoreline-incident-automation, https://incident.io/blog/runbook-automation-tools-2026-the-complete-guide — MEDIUM confidence
+- LangGraph: Human-in-the-loop docs, `interrupt()` pattern — https://docs.langchain.com/oss/python/langchain/human-in-the-loop — MEDIUM confidence
+- LangGraph Studio: DeepWiki graph visualization reference — https://deepwiki.com/langchain-ai/langgraph-studio/5.2-graph-visualization — MEDIUM confidence (secondary source, cross-checked against LangGraph HITL docs)
+- Temporal: Web UI, Timeline view blog post — https://docs.temporal.io/web-ui, https://temporal.io/blog/lets-visualize-a-workflow — MEDIUM confidence
+- Apache Airflow: UI Overview, Best Practices — https://airflow.apache.org/docs/apache-airflow/stable/ui.html, https://airflow.apache.org/docs/apache-airflow/stable/best-practices.html — MEDIUM confidence
+- n8n: Execution Data and History, Pin and mock data — https://docs.n8n.io/workflows/executions/debug/, https://docs.n8n.io/build/work-with-data/pin-and-mock-data — MEDIUM confidence
+- Langfuse: AI Agent Observability blog, "Langfuse for Agents" changelog — https://langfuse.com/blog/2024-07-ai-agent-observability-with-langfuse, https://langfuse.com/changelog/2025-11-05-langfuse-for-agents — MEDIUM confidence
+- Rootly: "Why Timeline Construction Matters in Retrospectives and Incident Postmortems" — https://rootly.com/incident-postmortems/timeline — MEDIUM confidence
+- PagerDuty: Postmortem Documentation Guide — https://www.pagerduty.com/resources/insights/learn/how-to-write-postmortem/ — MEDIUM confidence
+- General SRE practice: severity level / color-coding convention synthesis across multiple incident-management vendor blogs (Xurrent, InvGate, Runframe, UptimeRobot) — MEDIUM confidence (converging consensus across independent sources, no single canonical spec)
+- Project context: `/Users/sanjay/incimin/.planning/PROJECT.md` — v1.7 milestone scope, existing Key Decisions (Postgres for state, `AsyncPostgresSaver`+`interrupt()` for HITL, React SPA tabs, allowlisted-action approval gate) — HIGH confidence (primary project source)
 
 ---
-
-*Feature research for: AI SRE Agent / AIOps Incident Response*
-*Researched: 2026-08-05*
+*Feature research for: incident/alert-triage dashboard UX, HITL approval UX, and agent-run visualization, scoped to incimin.io v1.7*
+*Researched: 2026-08-08*

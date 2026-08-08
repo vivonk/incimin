@@ -1,605 +1,200 @@
-# Architecture Research
+# Architecture Research — v1.7 Incident Dashboard
 
-**Domain:** AI SRE Incident Response Agent — multi-plane observability + graph topology + vector knowledge
-**Researched:** 2026-08-05
-**Confidence:** HIGH (verified against LangGraph source, soul-bits/rca-agent production implementation, SigNoz source, Memgraph docs, Qdrant client source)
-
----
+**Domain:** Adding durable human-in-the-loop, progress streaming, and a browser dashboard to an existing LangGraph SRE agent
+**Researched:** 2026-08-08
+**Confidence:** HIGH (LangGraph HITL/streaming verified against live docs); MEDIUM (SSE fan-out, asyncio task lifecycle — corroborated by current community sources, not project-specific benchmarked)
 
 ## Standard Architecture
 
 ### System Overview
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        PRESENTATION LAYER                            │
-│  ┌──────────────────────────┐   ┌────────────────────────────────┐  │
-│  │  Streamlit Chat UI        │   │  Memgraph Lab (port 3000)      │  │
-│  │  st.status expanders      │   │  Live node-highlight via Bolt  │  │
-│  │  Tool-call glass-box view │   │  WebSocket / Cypher WATCH      │  │
-│  └────────────┬─────────────┘   └────────────────────────────────┘  │
-└───────────────┼─────────────────────────────────────────────────────┘
-                │  stream_mode="updates"+"messages"
-┌───────────────┼─────────────────────────────────────────────────────┐
-│                      AGENT ORCHESTRATION LAYER                       │
-│  ┌────────────▼─────────────────────────────────────────────────┐   │
-│  │              LangGraph StateGraph (Python)                    │   │
-│  │                                                               │   │
-│  │  START → [agent_node] ──(has tool_calls?)──► [tools_node]    │   │
-│  │               ▲                                    │          │   │
-│  │               └────────────────────────────────────┘          │   │
-│  │                         ↓ (no tool_calls)                     │   │
-│  │                       [synthesize_node] → END                 │   │
-│  │                                                               │   │
-│  │  State: AgentState { messages: Annotated[list, add_messages] │   │
-│  │                       incident_context: IncidentContext }     │   │
+┌──────────────────────────────────────────────────────────────────────┐
+│  Browser (Vite SPA)                                                  │
+│  - dashboard: incident list, live timeline, approve/reject controls  │
+│  - EventSource client, one SSE connection per open incident view     │
+└───────────────────────┬────────────────────────────────────────────┬─┘
+                         │ GET /api/incidents/{id}/events (SSE)      │ static assets (dev: Vite proxy; prod: StaticFiles)
+┌────────────────────────▼────────────────────────────────────────────▼┐
+│  FastAPI app (NEW — replaces src/webhook/app.py Starlette app)       │
+│  ┌──────────────┐  ┌────────────────┐  ┌────────────────────────┐   │
+│  │ POST /webhook│  │ SSE endpoints  │  │ StaticFiles mount       │   │
+│  │  /signoz     │  │ (subscribe to  │  │ (built SPA, history      │   │
+│  │              │  │  in-proc pubsub)│  │  fallback to index.html) │   │
+│  └──────┬───────┘  └───────┬────────┘  └──────────────────────────┘   │
+│         │ asyncio.create_task            ▲                            │
+│  ┌──────▼─────────────────────────┐      │ in-process pub/sub          │
+│  │ Agent run task                 │──────┘ (fan-out, no DB round-trip) │
+│  │ graph.astream(..., config=     │                                   │
+│  │   {thread_id, checkpointer})   │      ┌────────────────────────┐   │
+│  └──────┬─────────────┬───────────┘      │ NOTIFY listener task    │   │
+│         │ per-step     │ on interrupt    │ (1 AsyncConnection,      │   │
+│         │ row INSERT   │ persists paused │  LISTEN incident_events, │   │
+│         ▼              ▼ state           │  .notifies() generator)  │   │
+│  ┌────────────────────────────────────────▼───────────────────────┐   │
+│  │ Postgres (NEW dependency)                                       │   │
+│  │  - langgraph checkpoints (AsyncPostgresSaver tables)             │   │
+│  │  - incident_events table (append-only step log)                 │   │
+│  │  - NOTIFY incident_events on each INSERT (trigger or app-level)  │   │
 │  └───────────────────────────────────────────────────────────────┘   │
-│         Tools: graph_bfs_tool | clickhouse_log_tool | qdrant_tool    │
-└───────────────────────────────────────────────────────────────────────┘
-                │              │                │
-         Bolt (7687)    HTTP (8123)       HTTP (6333)
-┌──────────────┼──────────────┼────────────────┼──────────────────────┐
-│                         DATA PLANE LAYER                              │
-│  ┌───────────▼──────┐  ┌───▼───────────┐  ┌──▼──────────────────┐  │
-│  │  Memgraph         │  │  ClickHouse   │  │  Qdrant             │  │
-│  │  Topology Plane   │  │  Telemetry    │  │  Knowledge Plane    │  │
-│  │                   │  │  Plane        │  │                     │  │
-│  │  14 Service nodes │  │  (via SigNoz) │  │  Runbook vectors    │  │
-│  │  DEPENDS_ON edges │  │  signoz_logs  │  │  Postmortem embeds  │  │
-│  │  BFS traversal    │  │  .distributed │  │  metadata filter    │  │
-│  │  + MAGE algos     │  │  _logs table  │  │  cosine similarity  │  │
-│  └──────────────────┘  └───────────────┘  └─────────────────────┘  │
-└───────────────────────────────────────────────────────────────────────┘
-                                    ▲
-                          OTLP gRPC (4317)
-┌───────────────────────────────────┼──────────────────────────────────┐
-│                     TELEMETRY INGESTION LAYER                         │
-│  ┌─────────────────────────────────────────────────────────────────┐ │
-│  │  SigNoz OTel Collector → ClickHouse Writer → signoz_logs DB     │ │
-│  └─────────────────────────────────────────────────────────────────┘ │
-│  ┌─────────────────────────────────────────────────────────────────┐ │
-│  │  OTel Astronomy Shop (14 instrumented microservices)             │ │
-│  │  accounting | ad | cart | checkout | currency | email |          │ │
-│  │  frontend | frontend-proxy | kafka | payment | product-catalog   │ │
-│  │  quote | recommendation | shipping                               │ │
-│  └─────────────────────────────────────────────────────────────────┘ │
-└───────────────────────────────────────────────────────────────────────┘
+└────────────────────────────────────────────────────────────────────────┘
+                         │ (unchanged) tool calls
+┌────────────────────────▼────────────────────────────────────────────┐
+│  Memgraph · SigNoz/ClickHouse · Qdrant · Langfuse (unchanged)        │
+└────────────────────────────────────────────────────────────────────┘
 ```
 
----
+### Component Responsibilities
 
-## Component Responsibilities
+| Component | Responsibility | Typical Implementation |
+|-----------|----------------|-------------------------|
+| FastAPI app | Webhook intake, SSE fan-out, static SPA serving, HITL resume endpoint | Single ASGI app, replaces `src/webhook/app.py` |
+| Agent run task | Drives `graph.astream()` per incident to completion or pause | `asyncio.create_task`, tracked in a module-level set |
+| Checkpointer | Persists graph state across the pause at `interrupt()` | `AsyncPostgresSaver`, one `thread_id` per incident |
+| Step logger | One DB row per node entry / tool call, source for the dashboard timeline | Custom `BaseCallbackHandler`, composed with the existing Langfuse handler |
+| NOTIFY listener | Single long-lived `LISTEN` connection, decouples DB fan-out from HTTP connection count | One `psycopg.AsyncConnection` (autocommit), `.notifies()` async generator, republishes into an in-process pub/sub (asyncio `Queue`/`Condition` per subscriber) |
+| SSE endpoint | One HTTP response per browser tab, subscribes to the in-process pub/sub, never touches Postgres directly | `StreamingResponse` / `sse-starlette`, detects disconnect via `request.is_disconnected()` |
 
-| Component | Responsibility | Key Interface |
-|-----------|----------------|---------------|
-| **LangGraph StateGraph** | Orchestrates the RCA loop: LLM reasoning → tool dispatch → result accumulation → synthesis | Python in-process; compiled graph called via `.stream()` |
-| **agent_node** | Calls LLM with current messages + system prompt; LLM decides which tool to call next | LangChain ChatModel + bound tools |
-| **tools_node** | Executes the tool the LLM selected; writes `ToolMessage` back to state | `ToolNode` from `langgraph.prebuilt` |
-| **synthesize_node** | Final LLM call once all evidence is in state; emits structured RCA report | LLM with `response_format` structured output |
-| **graph_bfs_tool** | Cypher BFS traversal on Memgraph to return affected service + upstream/downstream neighbors | `gqlalchemy` or raw `pymgclient` over Bolt 7687 |
-| **clickhouse_log_tool** | SQL query to `signoz_logs.distributed_logs` filtered by service_name + time window | `clickhouse-connect` HTTP 8123 |
-| **qdrant_tool** | Semantic vector search over embedded runbooks + postmortems; returns top-k with metadata filter | `qdrant-client` HTTP 6333 |
-| **Memgraph** | In-memory graph DB storing service topology (nodes = services, edges = DEPENDS_ON); BFS source of truth | Bolt wire protocol; Cypher; MAGE modules |
-| **ClickHouse** (via SigNoz) | Columnar log + trace storage; table `signoz_logs.distributed_logs` | HTTP SQL interface |
-| **Qdrant** | Vector store for runbook/postmortem embeddings; `payload` filtering by `service` or `incident_type` | REST/gRPC |
-| **SigNoz OTel Collector** | Receives OTLP from all services; routes to ClickHouse | OTLP gRPC 4317 |
-| **Streamlit UI** | Chat interface; renders agent steps via `st.status` + `stream_mode="updates"` | Python `graph.stream()` |
-| **Memgraph Lab** | Live graph visualization; highlights traversed nodes | Browser WebSocket to Bolt 7687; read-only Cypher |
+## Existing Architecture — What It Is Today
 
----
+Read directly from the codebase (do not re-derive from memory):
 
-## Data Flow
+- **`src/agent/graph.py`** — custom `StateGraph`, not `create_react_agent`. Nodes: `agent` (LLM, tool-binding) ⇄ `tools` (`ToolNode`) loop → `synthesize` (structured output) → `verifier` (deterministic) → `finalize` / `graceful_exit` → `END`. `workflow.compile()` is called with **no `checkpointer` argument and no `interrupt_before`/`interrupt_after`**. This is the single most important fact for Question 1: today the graph is stateless between runs and cannot pause.
+- **`src/agent/state.py`** — `SREAgentState(TypedDict)`: `messages` (add_messages reducer), `remaining_steps` (int, decremented per LLM turn — this is the step-budget guard, not a HITL mechanism), `evidence` (operator.add reducer — append-only), `candidate_services`, `synthesis: Synthesis | None`, `verification_result: VerificationResult | None`.
+- **`src/webhook/app.py`** — Starlette app. `POST /webhook/signoz` parses Alertmanager-shaped alerts into `AlertContext`, dedupes on `dedupe_key` in a `dict` guarded by a `threading.Lock`, and spawns a **daemon `threading.Thread`** per accepted alert that calls `run_alert(ctx)`. That function synchronously drives `meta_agent.stream(inputs, stream_mode="updates", config=trace_config(ctx, "agent"))` — a **sync**, non-checkpointed stream — logging each `{node: state}` update and extracting the last `AIMessage` with text as the final answer. Concurrency is capped by a `threading.BoundedSemaphore`. This whole module is explicitly being retired.
+- **`src/agent/tracing.py`** — `trace_config()` builds a `RunnableConfig`; it **merges** into any existing `callbacks` list (`config["callbacks"] = [*existing, langfuse_handler]`) rather than overwriting, specifically so a caller's own callbacks survive. This merge behavior is the seam the new step-logging callback handler must reuse — do not replace `config["callbacks"]`, append to it.
 
-### Primary RCA Flow (End-to-End)
+## Q1 — Durable Human-in-the-Loop in LangGraph 1.2.x (verified against live docs, `/websites/langchain_oss_python_langgraph`)
 
-```
-User types: "Checkout latency is spiking"
-    │
-    ▼
-[Streamlit] calls graph.stream({"messages": [HumanMessage(query)]},
-                               stream_mode=["updates", "messages"])
-    │
-    ▼
-[agent_node] — LLM sees system prompt + incident message
-              LLM emits: AIMessage(tool_calls=[graph_bfs_tool(service="checkout")])
-    │
-    ▼ (should_continue returns Send("tools", tool_call))
-[tools_node] — executes graph_bfs_tool
-              → Cypher BFS: MATCH path = (s:Service {name:"checkout"})-[:DEPENDS_ON*1..3]-(n) RETURN n
-              → Returns: [checkout, payment, cart, currency, productcatalog]
-              → Writes ToolMessage(result=service_list) to state.messages
-    │
-    ▼ (back to agent_node)
-[agent_node] — LLM sees tool result
-              LLM emits: AIMessage(tool_calls=[clickhouse_log_tool(services=[...], window_minutes=15)])
-    │
-    ▼
-[tools_node] — executes clickhouse_log_tool
-              → SQL: SELECT timestamp, body, severity_text, trace_id
-                     FROM signoz_logs.distributed_logs
-                     WHERE resources_string['service.name'] IN ('checkout','payment',...)
-                       AND timestamp >= now() - INTERVAL 15 MINUTE
-                       AND severity_text IN ('ERROR','WARN')
-                     ORDER BY timestamp DESC LIMIT 50
-              → Returns: error log rows as JSON
-              → Writes ToolMessage(result=logs_json) to state.messages
-    │
-    ▼ (back to agent_node)
-[agent_node] — LLM decides runbook lookup is needed
-              LLM emits: AIMessage(tool_calls=[qdrant_tool(query="payment service crash checkout latency")])
-    │
-    ▼
-[tools_tool] — executes qdrant_tool
-              → Embeds query with sentence-transformers
-              → client.search(collection="runbooks", query_vector=...,
-                              query_filter=Filter(must=[FieldCondition(key="service", match=MatchValue("payment"))]),
-                              limit=3)
-              → Returns: [runbook chunks + metadata]
-    │
-    ▼ (back to agent_node)
-[agent_node] — LLM has all evidence; no more tool_calls needed
-              → routes to END path / synthesize_node
-    │
-    ▼
-[synthesize_node OR final agent_node output]
-              → Structured output: {root_cause, affected_services, evidence_chain, remediation_steps}
-    │
-    ▼
-[Streamlit] renders each step as st.status expander as stream events arrive
-            "graph_bfs_tool: traversed 5 services" → st.status(state="complete")
-            "clickhouse_log_tool: 23 ERROR logs found" → st.status(state="complete")
-            "qdrant_tool: runbook retrieved" → st.status(state="complete")
-            Final answer rendered as st.markdown in main chat area
-```
+### The mechanics
 
-### Telemetry Ingestion Flow (OTel → ClickHouse)
+- `interrupt(value)` is called **inside a node function**, at the point where you want to pause. It is not async-specific — it works the same in sync or async node functions.
+- Calling it **raises an internal control-flow signal** (LangGraph's own exception type, not something you catch) that unwinds execution back to the runtime. The runtime persists the current checkpoint (full graph state, plus which node was mid-execution) and returns control to the caller. The graph is now **paused**, not finished.
+- This means `interrupt()` never "returns" on the call that raises it — nothing after it runs on that pass.
+- **Resuming**: call the graph again with the **same `thread_id`** and input `Command(resume=<value>)` instead of a normal input dict. Docs, verbatim: *"When resuming an interrupt, you must use the same thread ID that was used when the interrupt occurred. The value passed to `Command(resume=...)` becomes the return value of the `interrupt` call, and the node restarts from the beginning of where `interrupt` was called."*
+- **The re-execution problem is real and by design**, not a bug to work around: *"When `interrupt` is called within a node, LangGraph suspends execution... Upon resumption, the entire node restarts from the beginning, meaning any code that ran before the `interrupt` will execute again."* Concretely: any DB write, external API call, or side effect placed **before** the `interrupt()` call in that node runs a second time on resume. LangGraph's own guidance: (a) put side effects **after** the `interrupt()` call whenever possible, so they only fire once approval is granted; (b) if a side effect must happen before the interrupt, make it **idempotent** (e.g., upsert keyed on incident id, not a bare INSERT).
+- **`thread_id` is mandatory** and lives at `config["configurable"]["thread_id"]`. Without a `checkpointer` compiled into the graph, `interrupt()` cannot persist state and the pause has nowhere to resume from — **this is the concrete reason `workflow.compile()` must change** from today's no-argument call to `workflow.compile(checkpointer=<a persistent saver>)`.
 
-```
-OTel Astronomy Shop service
-    │ OTLP gRPC (4317) → logs, traces, metrics
-    ▼
-SigNoz OTel Collector (otelcol-contrib)
-    │ ClickHouse Exporter
-    ▼
-ClickHouse
-    Tables: signoz_logs.distributed_logs
-            signoz_traces.distributed_trace_index
-            signoz_metrics.*
-```
+### Detecting a pause from outside the run
 
-### ClickHouse Log Table Structure (MEDIUM confidence — sourced from SigNoz constants.go)
+Two supported ways, both confirmed in docs:
 
-Key columns in `signoz_logs.distributed_logs`:
-- `timestamp` — UInt64 nanoseconds
-- `id` — String (log ID)
-- `trace_id`, `span_id` — String (OTel correlation)
-- `severity_text` — String (`INFO`, `WARN`, `ERROR`)
-- `severity_number` — UInt8
-- `body` — String (log message)
-- `resources_string` — `Map(String, String)` — contains `service.name` key
-- `attributes_string` — `Map(String, String)` — custom attributes
-- `attributes_number` — `Map(String, Float64)`
+1. **Synchronous check on the result.** `graph.invoke(inputs, config)` (or draining a `.stream(...)`) returns/produces a dict that carries a `__interrupt__` key when the run paused: `result["__interrupt__"]` is a tuple of `Interrupt(value=..., id=...)` objects. Docs state this explicitly as the fallback when you don't need streamed output: *"The default `graph.invoke(...)` API also works and surfaces interrupts under `result["__interrupt__"]`."*
+2. **Out-of-band polling.** `graph.get_state(config)` returns a `StateSnapshot` whose `.next` tuple names the node(s) about to run and whose `.tasks` carry pending `.interrupts` — this is how a separate process (e.g., the FastAPI request handler answering "is this incident waiting on a human?") can inspect a paused thread without re-driving the graph at all. This is the correct mechanism for the dashboard's "is there a pending approval" indicator: query state by `thread_id`, don't try to keep the stream open across an HTTP request/response cycle.
 
-**Agent log query pattern:**
-```sql
-SELECT timestamp, body, severity_text, trace_id, span_id,
-       resources_string['service.name'] as service_name
-FROM signoz_logs.distributed_logs
-WHERE resources_string['service.name'] IN ('paymentservice', 'checkoutservice')
-  AND timestamp >= toUnixTimestamp64Nano(now64() - toIntervalMinute(15))
-  AND severity_text IN ('ERROR', 'WARN')
-ORDER BY timestamp DESC
-LIMIT 50
-```
+### A version caveat worth flagging to the roadmapper
 
-### Memgraph Topology Data Model
-
-```cypher
-// Nodes
-(:Service {name: "checkoutservice", language: "go", version: "1.0"})
-(:Service {name: "paymentservice", language: "java", version: "1.0"})
-
-// Edges (dependency direction: A DEPENDS_ON B = A calls B)
-(checkoutservice)-[:DEPENDS_ON]->(paymentservice)
-(checkoutservice)-[:DEPENDS_ON]->(cartservice)
-(checkoutservice)-[:DEPENDS_ON]->(currencyservice)
-(checkoutservice)-[:DEPENDS_ON]->(productcatalogservice)
-(checkoutservice)-[:DEPENDS_ON]->(shippingservice)
-(checkoutservice)-[:DEPENDS_ON]->(emailservice)
-
-// BFS query for agent traversal
-MATCH path = (s:Service {name: $service_name})-[:DEPENDS_ON*1..3]-(n:Service)
-RETURN DISTINCT n.name, length(path) as hop_distance
-ORDER BY hop_distance
-```
-
----
-
-## LangGraph State Machine Design Patterns
-
-### Pattern 1: Custom State with Incident Context (RECOMMENDED over bare AgentState)
-
-The built-in `AgentState` (just `messages`) is sufficient for the demo but add a typed context field for clean evidence accumulation:
+Context7's current docs describe a newer `graph.stream_events(..., version="v3")` API returning a `StreamProtocol`-like object (`.output`, `.interrupted`, `.interrupts`, `.messages`) as the *recommended* way to drive interruptible runs. **This may be ahead of the pinned `langgraph==1.2.10`** — treat `stream_events`/`version="v3"` as unverified for this pin. What is safe and stable across the 1.x line (and directly confirmed for this project's use case) is the **classic pattern already compatible with how `src/webhook/app.py` drives the graph today**:
 
 ```python
-from typing import Annotated, TypedDict
-from langchain_core.messages import AnyMessage
-from langgraph.graph.message import add_messages
+config = {"configurable": {"thread_id": ctx.dedupe_key}}
+result = await app.ainvoke(inputs, config=trace_config(ctx, "agent") | config)
+if "__interrupt__" in result:
+    pending = result["__interrupt__"]          # tuple[Interrupt, ...]
+    # persist "paused, waiting on <pending[0].value>" and return — do not block the request
+else:
+    final_answer = ...                          # existing extraction logic
 
-class IncidentContext(TypedDict):
-    query: str
-    affected_services: list[str]       # populated by graph_bfs_tool
-    log_evidence: list[dict]           # populated by clickhouse_log_tool
-    runbook_context: str | None        # populated by qdrant_tool
-
-class SREAgentState(TypedDict):
-    messages: Annotated[list[AnyMessage], add_messages]
-    incident_context: IncidentContext  # structured evidence accumulation
+# later, when a human responds via the dashboard:
+config = {"configurable": {"thread_id": ctx.dedupe_key}}
+result = await app.ainvoke(Command(resume=user_decision), config=config)
 ```
 
-**Why:** The `add_messages` reducer on `messages` handles message list merging automatically. The `incident_context` field gives nodes direct access to structured evidence without re-parsing tool messages. Do not use a plain dict — TypedDict gives IDE completion and Pydantic validation.
+Before adopting `stream_events`, re-verify against the exact installed `langgraph` version (`pip show langgraph`) rather than trusting the docs snippet dates — this is a "phase needs deeper research" flag for the roadmap.
 
-### Pattern 2: Tool Definition with @tool Decorator
+### Sync node, async driver — confirmed compatible
 
-```python
-from langchain_core.tools import tool
-from typing import Annotated
+`interrupt()` itself doesn't care whether the node function is `def` or `async def`, or whether the graph is driven with `.invoke`/`.stream` or `.ainvoke`/`.astream`. LangGraph runs sync node bodies in a thread-pool executor when the graph is driven asynchronously, so **the existing sync `agent_node`, `synthesize_node`, `verifier_node` functions in `graph.py` do not need to become `async def`** just to add an interrupt-bearing node — only the *driver* (the new FastAPI code that calls `.astream`/`.ainvoke`) needs to be async. A new HITL node (e.g., `await_approval_node`) can be a plain sync function that calls `interrupt(...)`.
 
-@tool
-def graph_bfs_tool(
-    service_name: Annotated[str, "The service to start BFS traversal from"],
-    max_hops: Annotated[int, "Maximum hop distance, default 3"] = 3,
-) -> str:
-    """Traverse the service dependency graph using BFS. Returns all services
-    reachable from the named service within max_hops. Use this first to
-    identify blast radius before querying logs."""
-    # Execute Cypher BFS against Memgraph
-    results = memgraph_client.execute(
-        "MATCH path=(s:Service {name:$svc})-[:DEPENDS_ON*1..$hops]-(n) "
-        "RETURN DISTINCT n.name, length(path) as hop",
-        {"svc": service_name, "hops": max_hops}
-    )
-    return json.dumps([{"service": r["n.name"], "hops": r["hop"]} for r in results])
-```
+### Where the interrupt goes in *this* graph
 
-**Critical constraint:** Tool functions must be synchronous OR the graph must be compiled for async with `astream()`. For the demo's Streamlit integration, sync tools with `graph.stream()` is simpler and avoids event loop nesting.
+The natural insertion point is a **new node between `verifier` and `finalize`**: after the Verifier passes, add `await_approval` which calls `interrupt({"synthesis": ..., "verification_result": ...})` and, once resumed, routes to `finalize` (approved) or `graceful_exit` (rejected) based on the resume value. This is additive — it does not change `agent`, `tools`, `synthesize`, or `verifier`. `route_after_verifier`'s conditional-edge target `"finalize"` becomes `"await_approval"`; a new conditional edge `await_approval -> {"finalize", "graceful_exit"}` reads the resume value out of state.
 
-### Pattern 3: Routing via Conditional Edges (ReAct loop)
+## Q2 — Streaming Agent Progress to a Database
 
-```python
-from langgraph.graph import StateGraph, END
-from langgraph.prebuilt import ToolNode
+| Approach | Node-level start/end fidelity | Composes with Langfuse handler | Verdict |
+|---|---|---|---|
+| `stream_mode="updates"` (already used in `src/webhook/app.py`) | **End-only.** Each chunk is `{node_name: state_after_node}` — you learn a node *finished* and what it wrote, never when it *started*. Confirmed in docs: *"Streams only the state updates returned by nodes after each step."* | N/A — it's a driver loop, not a callback; Langfuse tracing is independent and already wired via `config["callbacks"]`. | Good enough for "log what happened," insufficient for "show a live start indicator." |
+| `astream_events(version="v2")` | Full fidelity: `on_chain_start`/`on_chain_end` per node (and per LLM call, per tool call) as discrete events with `run_id`, `name`, `data`. This is the standard event-dict format that has been stable since LangChain's callback-events design and is what powers most "live agent trace" UIs. | Runs *through* the same callback-manager machinery as `BaseCallbackHandler` — the Langfuse handler already installed in `config["callbacks"]` fires normally underneath an `astream_events` call; no conflict, both consume the same event stream from different mechanisms. | **Recommended** for the dashboard: gives real start+end boundaries with minimal new code (filter the event dict for `event in {"on_chain_start", "on_chain_end"}` and `name` matching your node names). |
+| Custom `BaseCallbackHandler` (`on_chain_start`, `on_chain_end`, `on_tool_start`, `on_tool_end`) | Same fidelity as `astream_events` — they are two views onto the same callback events — but pushed synchronously as a **side effect during the run** rather than pulled by iterating a stream. | Add it to the same `callbacks` list the Langfuse handler occupies; `trace_config()`'s merge behavior (`config["callbacks"] = [*existing, handler]`) already supports appending a second handler without disturbing the first — this is the intended extension point, not a workaround. | **Recommended** as the actual implementation mechanism: a `DBStepLogger(BaseCallbackHandler)` that does `INSERT INTO incident_events` (and `NOTIFY`) on `on_chain_start`/`on_chain_end`/`on_tool_start`/`on_tool_end`, added alongside the Langfuse handler via the existing merge pattern in `tracing.trace_config()`. This avoids owning a second parallel stream-consumption loop next to whatever drives the graph for the HITL/resume logic in Q1. |
 
-def should_continue(state: SREAgentState) -> str:
-    messages = state["messages"]
-    last = messages[-1]
-    # If LLM made tool calls → execute them
-    if hasattr(last, "tool_calls") and last.tool_calls:
-        return "tools"
-    # Otherwise → done
-    return END
+**Practical recommendation:** don't choose `astream_events` *or* a callback handler — use a **callback handler fed into the same `config` that already carries the Langfuse handler**, and keep the `.ainvoke()`/`.astream(stream_mode="updates")` loop from Q1 as the *driver* (it decides when to stop for an interrupt). The callback handler is a passive observer bolted onto that same run via `config["callbacks"]`; it doesn't need its own loop.
 
-builder = StateGraph(SREAgentState)
-builder.add_node("agent", agent_node)
-builder.add_node("tools", ToolNode(tools=[graph_bfs_tool, clickhouse_log_tool, qdrant_tool]))
-builder.set_entry_point("agent")
-builder.add_conditional_edges("agent", should_continue, {"tools": "tools", END: END})
-builder.add_edge("tools", "agent")
-graph = builder.compile()
-```
+## Q3 — Live Push to a Browser
 
-**Note:** As of LangGraph v0.2+, `create_react_agent` handles this automatically. Use it unless you need custom routing logic. The v2 API dispatches tool calls in parallel via `Send` — if the LLM emits multiple tool_calls in one step, all fire concurrently.
+- **One dedicated `LISTEN` connection, not one per subscriber.** A pool connection held open per SSE client for the lifetime of that tab would exhaust the pool under a handful of concurrent viewers, since pool connections are meant to be checked out briefly, not parked. The verified pattern (current community consensus, corroborated by multiple 2025-era writeups on this exact combination): open **one** `psycopg.AsyncConnection` in **autocommit mode** at app startup, `await conn.execute("LISTEN incident_events")`, and consume `async for notify in conn.notifies():` in a single background task for the app's lifetime.
+- **Fan-out is in-process, not per-client-to-Postgres.** That one listener task republishes each `NOTIFY` payload into an in-process pub/sub structure — the simplest correct version is a `dict[incident_id, set[asyncio.Queue]]` (or `broadcaster`/`anyio` memory streams) that each SSE endpoint subscribes an `asyncio.Queue` into on connect and removes on disconnect. This means the *number of Postgres connections is O(1)*, independent of the number of open browser tabs, which is the entire point of the pattern.
+- **Client disconnects** are detected inside the SSE generator loop via `await request.is_disconnected()` (Starlette/FastAPI) checked between yields, or by catching the `asyncio.CancelledError` FastAPI raises into the generator when the client closes the connection — either way, the generator's `finally:` block must remove its queue from the pub/sub dict, or dead subscribers accumulate as a slow memory leak.
+- **NOTIFY payload should be small** (event id / incident id / row id), with the SSE handler fetching the actual row from Postgres (or, more simply, having the callback handler pass the full small JSON payload straight into `NOTIFY channel, payload` — Postgres NOTIFY payloads are capped at 8000 bytes, which is fine for one step-event row but not for large tool outputs; truncate or reference-by-id for anything bigger).
 
-### Pattern 4: Streaming to Streamlit with st.status
+## Q4 — Background asyncio Tasks in FastAPI
 
-```python
-# In streamlit app
-with st.chat_message("assistant"):
-    for event in graph.stream(
-        {"messages": [HumanMessage(content=user_query)]},
-        stream_mode="updates",  # emits {node_name: state_delta} dicts
-    ):
-        for node_name, state_delta in event.items():
-            if node_name == "tools":
-                # Extract tool results from messages
-                for msg in state_delta.get("messages", []):
-                    if hasattr(msg, "name"):  # ToolMessage
-                        with st.status(f"{msg.name}", state="complete"):
-                            st.json(json.loads(msg.content)[:5])  # preview
-            elif node_name == "agent":
-                # Check if final answer (no tool calls)
-                for msg in state_delta.get("messages", []):
-                    if hasattr(msg, "content") and not getattr(msg, "tool_calls", []):
-                        st.markdown(msg.content)
-```
+- **Never fire-and-forget a bare `asyncio.create_task(...)`** — without a live reference the task object can be garbage-collected mid-run (this is explicitly called out in the asyncio docs: "the event loop only keeps weak references to tasks"). Keep a module-level `set[asyncio.Task]` (or a small task-registry object owned by the FastAPI app's lifespan state), add each new task to it, and register `task.add_done_callback(registry.discard)` to self-clean on completion.
+- **Bound concurrency** the same way `src/webhook/app.py` already does today with its `threading.BoundedSemaphore` — port that exact idea to `asyncio.Semaphore(WEBHOOK_MAX_CONCURRENCY)` acquired inside the task body, so an alert storm queues agent runs instead of fanning out unbounded concurrent LLM calls.
+- **Lifecycle**: start the NOTIFY-listener task and any startup work in FastAPI's `lifespan` context manager (not `@app.on_event("startup")`, which is deprecated), and explicitly `task.cancel()` + `await` it on shutdown so the listener connection closes cleanly.
+- **Surviving a process restart** is the reason the checkpointer (Q1) and the `incident_events` table (Q2) must both be in Postgres, not in-memory: an in-flight agent run whose process is killed mid-run is simply gone (no asyncio task survives a restart) — but because the graph state was checkpointed before every pause, and because completed steps are already durably logged, a restart's worst case is "this specific in-flight run must be manually resumed or re-triggered," not "the incident history disappears." There is no mechanism to auto-resume orphaned runs without additional bookkeeping (e.g., a `status='running'` row with a heartbeat) — flag this as an explicit, deferrable scope decision rather than something the base architecture solves for free.
 
-**stream_mode options (HIGH confidence — from LangGraph types.py):**
-- `"updates"` — emits `{node_name: state_delta}` after each node completes; best for showing step progress
-- `"messages"` — emits LLM tokens as they stream; best for streaming the final answer text
-- `["updates", "messages"]` — combine both; use for the full glass-box experience
+## Q5 — Serving a Vite SPA from FastAPI
 
-### Pattern 5: Tool Isolation (Determinism Guarantee)
-
-The core architectural constraint from PROJECT.md: "Zero LLM hallucinations in the critical path." Enforce it structurally:
-
-```
-agent_node:    LLM decides WHAT to query (tool selection + parameters)
-tools_node:    Executes the query DETERMINISTICALLY (no LLM in this path)
-synthesize:    LLM interprets results (only place LLM reasons about data)
-```
-
-**Never:** Put Cypher generation inside the LLM's reasoning. The LLM passes `service_name` as a string; the tool function generates the Cypher programmatically.
-
-**Never:** Put ClickHouse SQL generation inside the LLM's reasoning. The tool generates SQL from the service list returned by the graph tool.
-
----
-
-## Recommended Project Structure
-
-```
-incimin.io/
-├── agent/
-│   ├── graph.py              # StateGraph definition, compiled graph export
-│   ├── state.py              # SREAgentState TypedDict
-│   ├── nodes/
-│   │   ├── agent_node.py     # LLM call with bound tools; returns AIMessage
-│   │   └── synthesize_node.py # Optional: final structured output node
-│   └── tools/
-│       ├── graph_tool.py     # graph_bfs_tool — Memgraph Cypher BFS
-│       ├── logs_tool.py      # clickhouse_log_tool — signoz_logs SQL
-│       └── runbook_tool.py   # qdrant_tool — vector search
-│
-├── clients/
-│   ├── memgraph.py           # pymgclient/gqlalchemy singleton
-│   ├── clickhouse.py         # clickhouse-connect singleton
-│   └── qdrant.py             # qdrant-client singleton
-│
-├── data/
-│   ├── seed_topology.cypher  # 14-service graph seed script
-│   └── runbooks/             # Markdown runbooks for Qdrant ingestion
-│       ├── payment_crash.md
-│       ├── checkout_latency.md
-│       └── cart_service_failure.md
-│
-├── scripts/
-│   ├── ingest_runbooks.py    # Embeds .md files, upserts to Qdrant
-│   ├── seed_memgraph.py      # Runs seed_topology.cypher
-│   └── chaos_inject.py       # Docker kill paymentservice → deterministic P1
-│
-├── ui/
-│   └── app.py                # Streamlit chat + st.status streaming
-│
-├── docker-compose.yml        # Full stack: OTel demo + SigNoz + Memgraph + Qdrant
-└── pyproject.toml            # uv-managed; langgraph, langchain-anthropic, etc.
-```
-
-**Structure rationale:**
-- `agent/tools/` is decoupled from `clients/` — tools are LangChain `@tool` decorated functions; clients are connection singletons. This lets you mock clients in unit tests without touching tool definitions.
-- `data/seed_topology.cypher` is idempotent (MERGE not CREATE) — safe to re-run on restart.
-- `scripts/` are one-shot data bootstrappers, not part of the runtime path.
-
----
-
-## Architectural Patterns
-
-### Pattern 6: Three-Plane Separation
-
-Each data plane has distinct access semantics and must not leak into other planes:
-
-| Plane | Store | Access Pattern | LLM role |
-|-------|-------|----------------|----------|
-| Topology | Memgraph | Deterministic BFS; returns structured node list | Chooses starting node name |
-| Telemetry | ClickHouse | Time-windowed SQL; returns log rows | Chooses time window and service filter (passed to tool) |
-| Knowledge | Qdrant | Semantic vector search; returns doc chunks | Formulates the search query string |
-
-**Do not mix planes in a single tool call.** The LLM orchestrates cross-plane reasoning via sequential tool calls, but each tool touches exactly one data store. This makes failures debuggable and tools unit-testable in isolation.
-
-### Pattern 7: Memgraph Lab Visualization Coupling
-
-Memgraph Lab runs as a separate container connecting to Memgraph's Bolt port (7687). There is **no programmatic API** to highlight nodes from the agent. The split-screen demo effect is achieved manually:
-
-1. Pre-position Memgraph Lab in the browser showing the full graph
-2. As the agent runs `graph_bfs_tool`, have the operator run the same BFS Cypher in Lab's query editor to highlight the path
-3. For a fully automated approach: Lab supports **Style Scripts** — Cypher queries bound to visual properties. You can pre-configure a Style Script that colors nodes by a `highlighted` property, then the agent tool sets `SET n.highlighted = true` on traversed nodes as a side effect
-
-**Caution:** Modifying graph data (setting `highlighted` property) as a side effect of a read tool violates the immutable-reads principle. Isolate this to a demo-specific flag if used.
-
-### Pattern 8: ClickHouse Connection via clickhouse-connect
-
-SigNoz uses ClickHouse's native HTTP interface. The recommended Python client is `clickhouse-connect` (officially maintained by ClickHouse):
-
-```python
-import clickhouse_connect
-
-client = clickhouse_connect.get_client(
-    host="localhost", port=8123,
-    username="default", password="",
-    database="signoz_logs"
-)
-
-def query_logs(services: list[str], window_minutes: int = 15) -> list[dict]:
-    result = client.query(
-        "SELECT timestamp, body, severity_text, resources_string['service.name'] as svc "
-        "FROM distributed_logs "
-        "WHERE resources_string['service.name'] IN {services:Array(String)} "
-        "AND timestamp >= toUnixTimestamp64Nano(now64() - toIntervalMinute({window:Int32})) "
-        "AND severity_text IN ('ERROR', 'WARN') "
-        "ORDER BY timestamp DESC LIMIT {limit:Int32}",
-        parameters={"services": services, "window": window_minutes, "limit": 50}
-    )
-    return result.named_results()
-```
-
-**Note on SigNoz port:** SigNoz's `docker-compose.yml` exposes ClickHouse HTTP on port `9001` internally (not `8123`). Verify with `docker-compose ps clickhouse`. The external port binding in SigNoz's compose may differ from the default ClickHouse port.
-
-### Pattern 9: Qdrant Runbook Ingestion Pattern
-
-```python
-from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, VectorParams, PointStruct, Filter, FieldCondition, MatchValue
-from sentence_transformers import SentenceTransformer
-
-model = SentenceTransformer("all-MiniLM-L6-v2")
-client = QdrantClient(host="localhost", port=6333)
-
-# Collection creation (idempotent)
-client.recreate_collection(
-    collection_name="runbooks",
-    vectors_config=VectorParams(size=384, distance=Distance.COSINE)
-)
-
-# Ingest a runbook
-text = Path("data/runbooks/payment_crash.md").read_text()
-embedding = model.encode(text).tolist()
-client.upsert("runbooks", points=[
-    PointStruct(
-        id=1,
-        vector=embedding,
-        payload={"service": "paymentservice", "incident_type": "crash", "source": "payment_crash.md"}
-    )
-])
-
-# Query with metadata filter (in qdrant_tool)
-results = client.search(
-    collection_name="runbooks",
-    query_vector=model.encode(query_text).tolist(),
-    query_filter=Filter(must=[FieldCondition(key="service", match=MatchValue(value=service_name))]),
-    limit=3
-)
-```
-
----
-
-## Data Flow: Build Order Dependencies
-
-The build order is dictated by data plane readiness:
-
-```
-Phase 1: Infrastructure Foundation
-  docker-compose.yml (all containers up)
-      ↓ (required before any data seeding or code testing)
-
-Phase 2: Data Plane Initialization (parallelizable across team)
-  [Track A] Memgraph seed (seed_topology.cypher + 14 services)
-  [Track B] Qdrant runbook ingestion (3+ runbooks embedded)
-  [Track C] OTel Astronomy Shop → SigNoz receiving traces/logs
-
-Phase 3: Agent Core (depends on all three data planes ready)
-  client singletons (memgraph.py, clickhouse.py, qdrant.py)
-      ↓
-  tool functions (@tool wrappers around client queries)
-      ↓
-  StateGraph definition (state.py + graph.py)
-      ↓
-  Unit tests for each tool in isolation
-
-Phase 4: UI + Streaming
-  Streamlit app.py wiring graph.stream() → st.status
-      ↓
-  Chaos script (chaos_inject.py kills paymentservice)
-
-Phase 5: End-to-End Golden Path Validation
-  Full scenario: inject chaos → query → RCA output in <60s
-```
-
-**Critical dependency:** The agent cannot be tested end-to-end until all three data planes are seeded. This is the most common demo-day failure mode — plan for data seeding to complete early in Phase 2, with verification scripts.
-
----
+- **Production**: `app.mount("/assets", StaticFiles(directory="frontend/dist/assets"), name="assets")` for the hashed build output, plus a catch-all route (`@app.get("/{full_path:path}")`) that returns `FileResponse("frontend/dist/index.html")` for any path FastAPI's API routes didn't already claim — this is the SPA history-fallback pattern (client-side router paths like `/incidents/123` must 200 with `index.html`, not 404). Register API routes (`/webhook/signoz`, `/api/...`, SSE endpoints) **before** the catch-all, since route matching is order-sensitive.
+- **Dev mode**: run Vite's dev server (`npm run dev`, default port 5173) separately from `uvicorn` (port 8080), and let Vite's own `server.proxy` config forward `/api` and `/webhook` to the FastAPI port — this gives hot module reload for the frontend without FastAPI needing to know dev mode exists at all. Do not try to have FastAPI proxy *to* Vite; the standard direction is Vite proxying *to* the backend.
 
 ## Integration Points
 
-### External Service Boundaries
+| Existing component | Modified vs New | Nature of change |
+|---|---|---|
+| `src/agent/graph.py` | **Modified** | Add `checkpointer=` to `workflow.compile(...)`; add one new `await_approval` node calling `interrupt(...)` between `verifier` and `finalize`; add its conditional edge. `agent_node`/`tools`/`synthesize_node`/`verifier_node`/`finalize_node`/`graceful_exit_node` bodies are unchanged. |
+| `src/agent/state.py` | **Unmodified**, or additive only | `interrupt()` needs no new state fields (the resume value is passed via `Command`, not stored in `SREAgentState`) unless the dashboard wants the pending-approval payload persisted for display, in which case add one optional field. |
+| `src/webhook/app.py` | **Retired** | Its dedupe logic, `AlertContext` parsing (`src/webhook/alert.py`, untouched), semaphore-bounded concurrency, and the `run_meta_agent`/`run_diagnosis` target dispatch all get ported into the new FastAPI app — this is a lift-and-adapt of the existing logic to `async def` + `asyncio` primitives, not a redesign. |
+| `src/agent/tracing.py` | **Unmodified** | `trace_config()`'s merge-not-overwrite `callbacks` behavior is exactly the seam the new `DBStepLogger` callback handler plugs into; no changes needed, just add the second handler at the call site. |
+| New: `src/api/app.py` (or similar) | **New** | FastAPI app: webhook route, SSE routes, resume/approve route, StaticFiles mount, lifespan-managed NOTIFY listener task and task registry. |
+| New: checkpointer wiring | **New** | `AsyncPostgresSaver` instance (async context manager or held open for app lifetime), `thread_id` = incident dedupe key (reuse `AlertContext.dedupe_key`, already the Langfuse session id — one more reason to keep it as the single incident identity key throughout). |
+| New: `incident_events` table + `DBStepLogger` | **New** | Callback handler appended into `config["callbacks"]` alongside the Langfuse handler; writes one row per `on_chain_start`/`on_chain_end`/`on_tool_start`/`on_tool_end`; issues `NOTIFY` per insert (either via a Postgres trigger on the table or an explicit `NOTIFY` call in the same transaction — trigger is more robust since it fires regardless of insert path). |
+| New: NOTIFY listener + pub/sub + SSE endpoints | **New** | One `psycopg.AsyncConnection` listener task; in-process `dict[str, set[asyncio.Queue]]`; SSE `StreamingResponse` per client. |
+| New: frontend (Vite SPA) | **New** | Dashboard, timeline view, approve/reject controls calling the resume endpoint. |
 
-| Boundary | Protocol | Ports | Notes |
-|----------|----------|-------|-------|
-| Agent → Memgraph | Bolt (binary) | 7687 | Use `pymgclient` directly; `gqlalchemy` adds overhead for BFS queries |
-| Agent → ClickHouse | HTTP | 8123 (or 9001 in SigNoz compose) | `clickhouse-connect`; parameterized queries required |
-| Agent → Qdrant | REST/gRPC | 6333 (REST) / 6334 (gRPC) | `qdrant-client`; REST is fine for demo |
-| OTel Apps → Collector | OTLP gRPC | 4317 | Astronomy Shop pre-configured |
-| Streamlit → LangGraph | In-process | N/A | Same Python process; no network hop |
-| Browser → Memgraph Lab | WebSocket/Bolt | 3000 (UI) → 7687 | Read-only for visualization |
+## Data Flow Changes
 
-### Internal Module Boundaries
+1. **Today:** `POST /webhook/signoz` → `threading.Thread` → sync `.stream(stream_mode="updates")` drains to completion or `graceful_exit`, no persistence, no pause, log line is the only output artifact.
+2. **v1.7:** `POST /webhook/signoz` → `asyncio.create_task` (tracked, semaphore-bounded) → `.ainvoke(inputs, config={thread_id, checkpointer, callbacks:[langfuse, db_step_logger]})`. Each node's callback events write a row + trigger `NOTIFY`. If the run reaches `await_approval`, the checkpointer persists state, `interrupt()` unwinds, `result["__interrupt__"]` is written as a "pending approval" row, and the task returns (not exits with an error — this is a normal, expected outcome, and the task registry marks it done). Browser dashboard, subscribed via SSE, sees each row live and renders a pending-approval affordance. A human clicks approve/reject in the SPA → new `asyncio.create_task` calls `.ainvoke(Command(resume=decision), config={thread_id})` on the **same** `thread_id`, which resumes `await_approval` (re-running any code before the `interrupt()` call in that node — keep that code empty or idempotent) and proceeds to `finalize`/`graceful_exit`, streaming further rows the same way.
 
-| Boundary | Communication | Constraint |
-|----------|---------------|------------|
-| `agent/tools/` ↔ `clients/` | Direct function call | Clients are singletons; tools import from clients |
-| `agent/graph.py` ↔ `agent/tools/` | LangChain `@tool` registration | Tools registered at graph compile time |
-| `ui/app.py` ↔ `agent/graph.py` | `graph.stream()` iterator | UI imports compiled graph; no circular deps |
-| Chaos script ↔ Docker | Docker SDK or `subprocess(docker stop)` | Isolated to `scripts/`; never called from agent |
+## Suggested Build Order
 
----
+1. **Postgres + checkpointer plumbing first.** Stand up Postgres, wire `AsyncPostgresSaver`, add `checkpointer=` to `workflow.compile()`, and prove `interrupt()`/`Command(resume=...)` round-trips against `graph.py` directly (no FastAPI yet) — this is the highest-risk unknown (Q1) and everything else depends on the graph being checkpointed. Verify against the *actually installed* `langgraph` version before trusting any `stream_events`/`v3` snippet.
+2. **`incident_events` table + `DBStepLogger` callback handler**, tested against the existing `.ainvoke`/`.astream` calls from step 1 — confirms node-level rows land correctly and confirms the merge-into-`callbacks` pattern in `tracing.trace_config()` works unchanged.
+3. **New FastAPI app**, porting `src/webhook/app.py`'s dedupe/semaphore/target-dispatch logic to async, wired to steps 1–2. Old Starlette app can be deleted once parity is confirmed.
+4. **NOTIFY listener + in-process pub/sub + SSE endpoints**, layered on top of the now-populated `incident_events` table — this has no dependency on the agent internals, only on the table shape from step 2, so it can be built/tested with synthetic rows before step 3 is finished.
+5. **Resume/approve HTTP endpoint**, calling `Command(resume=...)` against the checkpointer from step 1 — depends on steps 1 and 3 both existing.
+6. **Vite SPA**, consuming the SSE endpoint from step 4 and the resume endpoint from step 5 — last, since it's the only piece with no backend dependents and benefits most from a stable API to build against.
+7. **StaticFiles mount + prod build wiring**, once the SPA exists — trivial, do last.
 
-## Anti-Patterns
+## Anti-Patterns to Avoid
 
-### Anti-Pattern 1: LLM-Generated Cypher
+### Anti-Pattern: Treating `remaining_steps` as a HITL gate
 
-**What people do:** Pass the incident description to the LLM and ask it to "write a Cypher query to find affected services."
+**What people might do:** try to reuse the existing `remaining_steps` step-budget field as the mechanism for pausing for human approval.
+**Why it's wrong:** `remaining_steps` is a runaway-loop guard (decremented per LLM turn, routes to `graceful_exit` at low values) — it has nothing to do with checkpointing or resumability, and repurposing it conflates two unrelated concerns.
+**Do this instead:** a dedicated `await_approval` node calling `interrupt()`, per Q1.
 
-**Why it's wrong:** Hallucinated node labels, wrong relationship names, injection risk, and non-deterministic output. In a demo, one bad Cypher query returning empty results cascades to an empty RCA.
+### Anti-Pattern: One Postgres connection per SSE subscriber
 
-**Do this instead:** The LLM calls `graph_bfs_tool(service_name="checkoutservice")`. The tool function programmatically constructs the BFS Cypher from the service name. The LLM's job is to identify the service name from the user query, not to write graph queries.
+**What people might do:** have each SSE endpoint open its own `LISTEN` connection (simplest code, mirrors the mental model of "each client listens").
+**Why it's wrong:** connection count scales with open browser tabs, not with incidents; a handful of viewers can exhaust a small connection pool, and most pools aren't designed for connections held open indefinitely.
+**Do this instead:** one listener connection, in-process fan-out, per Q3.
 
-### Anti-Pattern 2: Monolithic Tool That Queries All Three Planes
+### Anti-Pattern: Driving the interrupt-checking loop with `stream_mode="updates"` alone
 
-**What people do:** Create a single `investigate_incident(service, time_window)` tool that internally runs the Memgraph query, the ClickHouse query, and the Qdrant search, then returns everything at once.
-
-**Why it's wrong:** Eliminates the LLM's ability to reason about intermediate results. If the graph traversal shows only 2 affected services, the LLM should narrow the log query to those 2 — not pre-query all 14. Also eliminates glass-box visibility (you can't show individual tool steps in the UI).
-
-**Do this instead:** Three separate tools with sequential invocation. The LLM uses the result of tool N to parameterize tool N+1.
-
-### Anti-Pattern 3: Blocking Streamlit Main Thread with Synchronous LangGraph
-
-**What people do:** Call `graph.invoke()` (blocking) in the Streamlit button handler.
-
-**Why it's wrong:** Blocks the Streamlit rendering thread for the full 30-60 second RCA duration. The UI freezes. No streaming possible.
-
-**Do this instead:** Use `graph.stream(stream_mode="updates")` in a for-loop inside the Streamlit render block. Streamlit re-renders on each iteration of the for-loop, enabling progressive disclosure of tool results.
-
-### Anti-Pattern 4: Seeding Memgraph with CREATE Instead of MERGE
-
-**What people do:** Use `CREATE` in the seed script.
-
-**Why it's wrong:** Duplicate nodes on restart. The seed script must be idempotent.
-
-**Do this instead:** Use `MERGE (s:Service {name: $name}) SET s += $props`. On second run, updates properties instead of creating duplicates.
-
-### Anti-Pattern 5: Using `MemoryCheckpointer` Without Thread ID
-
-**What people do:** Add a checkpointer but forget to pass `config={"configurable": {"thread_id": "demo"}}` to `graph.stream()`.
-
-**Why it's wrong:** LangGraph raises a runtime error when checkpointer is present but thread_id is missing.
-
-**Do this instead:** Either omit the checkpointer entirely (fine for demo) or always pass thread_id. For the demo, use a fixed `thread_id = "incident-demo"` and reset it between runs.
-
----
-
-## Scaling Considerations
-
-The demo is single-user local Docker Compose. These only apply post-demo when evolving toward production:
-
-| Concern | At Demo Scale | At Team Scale (10-50 users) | At Enterprise Scale |
-|---------|--------------|------------------------------|---------------------|
-| LangGraph state | In-memory (no checkpointer needed) | SQLite checkpointer (`langgraph-checkpoint-sqlite`) | PostgreSQL checkpointer |
-| Memgraph | Single node, in-memory | Same — Memgraph is designed for in-memory operation | Memgraph with on-disk storage + replication |
-| ClickHouse | SigNoz bundled single-node | SigNoz Cloud or self-managed single-node | ClickHouse cluster with replication |
-| Qdrant | Single-node Docker | Qdrant Cloud or single-node with persistence | Qdrant distributed |
-| Agent concurrency | 1 concurrent run (Streamlit single-threaded) | FastAPI async endpoint per incident | Queue-backed (Celery/Temporal) |
-
----
+**What people might do:** keep the exact loop already in `src/webhook/app.py` (`for update in ...stream(stream_mode="updates")`) and look for `"await_approval"` as a node name in the update dict to detect a pause.
+**Why it's wrong:** an interrupted run's `__interrupt__` marker is a property of the **result/output**, not a per-node update chunk — `stream_mode="updates"` does not reliably surface it the same way `.invoke()`'s return value or `get_state()` does, per the docs' own recommended detection paths in Q1.
+**Do this instead:** use `.ainvoke()` and check `"__interrupt__" in result`, or poll `graph.get_state(config)`.
 
 ## Sources
 
-- **LangGraph source** — `langchain-ai/langgraph` `libs/prebuilt/langgraph/prebuilt/chat_agent_executor.py`, `libs/langgraph/langgraph/types.py` (HIGH confidence)
-- **soul-bits/rca-agent** — Production LangGraph RCA agent with OTel demo integration; architecture cross-validates all major patterns here (HIGH confidence, live implementation)
-- **SigNoz source** — `pkg/query-service/constants/constants.go` for `LogsSQLSelect` and table name `signoz_logs.distributed_logs` (HIGH confidence)
-- **GQLAlchemy docs** — `memgraph/gqlalchemy` README + query builder guide; confirmed Bolt 7687, MERGE patterns (HIGH confidence)
-- **Qdrant Python client** — `qdrant/qdrant-client` README + API; confirmed REST port 6333, `payload` filtering API (HIGH confidence)
-- **clickhouse-connect README** — ClickHouse/clickhouse-connect; confirmed HTTP interface, parameterized query API (HIGH confidence)
-- **OTel Astronomy Shop** — `open-telemetry/opentelemetry-demo` GitHub API; confirmed 14+ service names (HIGH confidence)
-- **qdmudong/SiliconBrain** — Memgraph + LangGraph architecture pattern for graph-backed agents (MEDIUM confidence — proof of concept)
+- LangGraph official docs, `docs.langchain.com/oss/python/langgraph/interrupts` — `interrupt()` semantics, `Command(resume=...)`, `thread_id` requirement, node re-execution on resume, idempotency guidance, `__interrupt__` key. Retrieved via context7 (`/websites/langchain_oss_python_langgraph`). Confidence: HIGH (official current docs).
+- LangGraph official docs, `docs.langchain.com/oss/python/langgraph/graph-api`, `streaming`, `use-time-travel`, `functional-api`, `checkpointers`, `add-memory` — `stream_mode="updates"` semantics, `AsyncPostgresSaver` setup, `get_state`/`get_state_history`, sync-node-in-async-graph behavior. Retrieved via context7. Confidence: HIGH, with the explicit caveat that the `stream_events(version="v3")` object API shown in some snippets may be ahead of the pinned `langgraph==1.2.10` and needs re-verification against the installed version before use.
+- `tom.catshoek.dev/posts/postgres-sse/` and corroborating community writeups on psycopg3 `LISTEN`/`NOTIFY` + FastAPI SSE — single dedicated autocommit `AsyncConnection`, `.notifies()` generator, in-process fan-out pattern. Confidence: MEDIUM (community consensus, not official psycopg/FastAPI documentation, but consistent across multiple independent sources).
+- Project source: `src/agent/graph.py`, `src/agent/state.py`, `src/webhook/app.py`, `src/agent/tracing.py` — read directly for this research. Confidence: HIGH (ground truth).
 
 ---
-
-*Architecture research for: AI SRE Incident Response Agent (incimin.io)*
-*Researched: 2026-08-05*
+*Architecture research for: incimin.io v1.7 Incident Dashboard milestone*
+*Researched: 2026-08-08*

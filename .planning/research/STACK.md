@@ -1,311 +1,160 @@
-# Stack Research
+# Technology Stack
 
-**Domain:** Autonomous AI SRE Agent — LangGraph orchestration, Memgraph graph topology, SigNoz/ClickHouse telemetry, Qdrant vector store
-**Researched:** 2026-08-05
-**Confidence:** HIGH (all versions verified from PyPI and Docker Hub APIs)
+**Project:** incimin.io — AI SRE Agent, v1.7 Incident Dashboard milestone
+**Researched:** 2026-08-08
 
----
+**Scope note:** This file covers ONLY the new additions required for this milestone (Postgres access, LangGraph Postgres checkpointing, the React frontend, and SSE streaming). The existing validated stack (LangGraph 1.2.10, GQLAlchemy/Memgraph, ClickHouse, FastAPI, numpy<2.0 pin, tensorflow override, Langfuse, etc.) is unchanged and NOT re-litigated here — see `pyproject.toml` and prior research for that.
 
 ## Recommended Stack
 
-### Core Technologies
+### Postgres Driver (async, FastAPI-facing)
 
-| Technology | Version | Purpose | Why Recommended |
-|------------|---------|---------|-----------------|
-| Python | 3.12 | Runtime | All required libraries support 3.12; numpy<2.0 pin resolves GQLAlchemy constraint; avoids 3.13 ecosystem lag |
-| LangGraph | 1.2.10 | Agent state machine | v1.x is the stable production API; `create_react_agent` + `ToolNode` provide deterministic tool dispatch without building a custom graph loop; critical for demo reliability |
-| langchain-core | 1.5.3 | LangChain primitives | LangGraph 1.2.10 pins `>=1.4.7,<2`; required for `@tool` decorator and `BaseTool` interface |
-| langchain-openai | 1.4.1 | LLM integration | Provides `ChatOpenAI` with native tool-calling; use for the synthesis step only |
-| langchain-anthropic | 1.5.3 | LLM integration (alt) | Drop-in alternative if Claude is preferred for synthesis; same `@tool` interface |
-| memgraph/memgraph-mage | 3.12.0 | Graph database + algorithms | MAGE bundle includes BFS/DFS Cypher procedures natively; single image eliminates separate MAGE sidecar; v3.12.0 is current stable (released 2026-07-15) |
-| GQLAlchemy | 1.10.0 | Memgraph Python ORM | Official Memgraph Python library; supports bolt+routing (added v1.10.0); cleaner Cypher execution than raw neo4j driver for this use case |
-| qdrant/qdrant | v1.19.0 | Vector store | Current stable; Python client 1.19.0 ships with `fastembed` integration for in-process embedding; required for runbook semantic search |
-| qdrant-client | 1.19.0 | Qdrant Python client | Version-locked to server; `QdrantClient.from_texts()` handles embedding + upsert in one call |
-| fastembed | 0.8.0 | Local embedding | Zero external API call for embedding runbooks and queries; BAAI/bge-small-en-v1.5 model (~130MB) is sufficient for SRE runbook similarity; removes OpenAI embedding dependency |
-| clickhouse-connect | 1.6.0 | ClickHouse Python client | Official Clickhouse Inc driver; supports async; works directly with SigNoz ClickHouse without schema translation layer |
-| signoz (Foundry) | v0.135.1 / Foundry v0.2.17 | Observability stack | Current stable release; deploy via `foundryctl` which generates Docker Compose manifests; includes OTel Collector + ClickHouse + SigNoz UI |
-| Streamlit | 1.61.0 | Chat UI | `st.status` expanders for tool-call glass-box visibility; `st.chat_message` for LLM output; no custom frontend overhead |
-| Pydantic | 2.13.4 | State schema + validation | LangGraph state objects require Pydantic v2; `TypedDict` works but Pydantic gives runtime validation on tool inputs |
+| Technology | Version | Purpose | Why |
+|------------|---------|---------|-----|
+| `psycopg[binary,pool]` | `>=3.2.0,<4` (currently resolves 3.3.4) | Async Postgres driver + connection pool | Official psycopg3 line is async-native (`psycopg.AsyncConnection`, `from psycopg_pool import AsyncConnectionPool`), ships prebuilt binary wheels (`binary` extra removes the need for `libpq`/build toolchain in Docker), and — critically — is the **same driver `langgraph-checkpoint-postgres` requires**. Using one driver avoids running two separate connection pools (asyncpg + psycopg) against the same Postgres instance. |
 
-### Supporting Libraries
+**Async pool API shape** (psycopg 3.2+):
+```python
+from psycopg_pool import AsyncConnectionPool
 
-| Library | Version | Purpose | When to Use |
-|---------|---------|---------|-------------|
-| langgraph-prebuilt | 1.1.0 | `create_react_agent`, `ToolNode` | Always — provides the tool dispatch node that handles parallel tool calls and error recovery |
-| langgraph-checkpoint | 4.1.1 | State persistence | Required for LangGraph; use in-memory checkpointer (`MemorySaver`) for demo; swap to `AsyncPostgresSaver` for production |
-| langsmith | 0.10.15 | LLM call tracing | Set `LANGCHAIN_TRACING_V2=true` for agent debugging; not required for demo but invaluable for development |
-| openai | 2.53.0 | Raw OpenAI API client | Pulled in by langchain-openai; don't call directly |
-| neo4j | 5.28.1 (latest 5.x) | Bolt protocol driver | GQLAlchemy depends on `neo4j<6.0.0`; Memgraph is bolt-compatible; do not use neo4j 6.x (breaks GQLAlchemy) |
-| numpy | 1.26.4 | Numerical ops | **Pin explicitly** — GQLAlchemy requires `<2.0,>=1.26.4` on Python 3.10-3.12; numpy 2.x will break GQLAlchemy |
-| pydantic-settings | 2.x | Config management | `BaseSettings` for env var injection; keeps connection strings out of code |
-| python-dotenv | 1.x | .env file loading | Dev environment only; prod uses env injection |
-| opentelemetry-api | 1.44.0 | OTel SDK | Only needed if adding custom spans to the agent itself; not required for consuming SigNoz data |
-
-### Development Tools
-
-| Tool | Purpose | Notes |
-|------|---------|-------|
-| uv | Python package and venv manager | Replaces pip + virtualenv; 10-100x faster resolution; `uv sync` from `pyproject.toml` |
-| Docker Compose v2 | Local stack orchestration | Use `docker compose` (v2 plugin), not `docker-compose` (v1 binary); v2 is the current default |
-| foundryctl | SigNoz stack deployment | Generates Compose manifests from `casting.yaml`; replaces deprecated `deploy/` scripts in SigNoz repo |
-| Memgraph Lab | Graph visualization | `memgraph/lab:2.13.0` Docker image; provides live node-highlight UI on port 3000 |
-| pyproject.toml | Project config | Use `[project]` standard (PEP 621); `uv add` manages dependencies |
-
----
-
-## Docker Compose Image Versions
-
-These are verified stable tags as of 2026-08-05 for the full local stack:
-
-```yaml
-# Memgraph — graph database with MAGE algorithms (BFS, DFS, community detection)
-memgraph/memgraph-mage:3.12.0       # single image includes both Memgraph server + MAGE procedures
-
-# Memgraph Lab — browser-based graph visualization (demo dual-screen)
-memgraph/lab:2.13.0                  # latest stable
-
-# Qdrant — vector store for runbook embeddings
-qdrant/qdrant:v1.19.0               # stable, not unprivileged/gpu variant
-
-# ClickHouse — telemetry storage backend for SigNoz
-clickhouse/clickhouse-server:24.1.2.5  # SigNoz-validated version; pinned in SigNoz Helm chart
-# NOTE: clickhouse-server:24.1.2-alpine also works; non-alpine is preferred for
-# compatibility with SigNoz's ClickHouse config expectations
-
-# SigNoz — deploy via foundryctl (Foundry v0.2.17) which pulls:
-#   signoz/signoz-otel-collector:0.55.0
-#   signoz/frontend + query-service pinned to v0.135.1
-
-# OTel Astronomy Shop
-# Services use: ghcr.io/open-telemetry/demo:3.0.0-{service}
-# e.g., ghcr.io/open-telemetry/demo:3.0.0-payment
-# OTel Collector: ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-contrib:0.157.0
+pool = AsyncConnectionPool(conninfo="postgresql://...", min_size=1, max_size=10, open=False)
+await pool.open()
+async with pool.connection() as conn:
+    async with conn.cursor() as cur:
+        await cur.execute("SELECT 1")
 ```
+Use `pool.connection()` as an async context manager per-request in FastAPI (e.g. via a dependency), not one connection held for the app lifetime.
 
----
+### LangGraph Postgres Checkpointing
 
-## Python Installation
+| Technology | Version | Purpose | Why |
+|------------|---------|---------|-----|
+| `langgraph-checkpoint-postgres` | `>=3.1.0,<4` (currently resolves 3.1.2) | Postgres-backed checkpointer for LangGraph state persistence | Its PyPI metadata declares `langgraph-checkpoint<5.0.0,>=4.1.0` — this is an **exact match** to the already-declared (currently unused) `langgraph-checkpoint>=4.1.0,<5` pin in `pyproject.toml`. No version bump needed on that existing dependency; this package simply activates it. |
 
-```bash
-# Create project with uv (Python 3.12 locked)
-uv init incimin-agent --python 3.12
-cd incimin-agent
+**Driver confirmation:** `langgraph-checkpoint-postgres` 3.1.2 declares `psycopg>=3.2.0` and `psycopg-pool>=3.2.0` as direct dependencies — it requires **psycopg3**, not asyncpg. This confirms the choice above: adding `psycopg[binary,pool]` satisfies both this package's requirement and the app's own Postgres access, so only one driver enters the dependency tree.
 
-# Core agent stack
-uv add "langgraph>=1.2.10,<1.3" \
-       "langgraph-prebuilt>=1.1.0" \
-       "langgraph-checkpoint>=4.1.0" \
-       "langchain-core>=1.4.7,<2" \
-       "langchain-openai>=1.4.0" \
-       "langchain-anthropic>=1.5.0"
+**`.setup()` is required and must be called explicitly.** `AsyncPostgresSaver.setup()` creates the checkpoint tables (`checkpoints`, `checkpoint_blobs`, `checkpoint_writes`, `checkpoint_migrations`) and runs schema migrations — it is **not** run automatically on connect. Call it once at startup (e.g. app lifespan) before the checkpointer is used:
+```python
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
-# Data plane clients
-uv add "GQLAlchemy>=1.10.0,<2" \
-       "qdrant-client>=1.19.0,<2" \
-       "fastembed>=0.8.0" \
-       "clickhouse-connect>=1.6.0,<2"
-
-# UI
-uv add "streamlit>=1.61.0"
-
-# Config
-uv add "pydantic>=2.7.4" \
-       "pydantic-settings>=2.0" \
-       "python-dotenv>=1.0"
-
-# CRITICAL: Pin numpy to avoid GQLAlchemy conflict with numpy 2.x
-uv add "numpy>=1.26.4,<2.0"
-
-# Dev tooling
-uv add --dev "langsmith>=0.10.0" "pytest>=8" "pytest-asyncio>=0.24"
+async with AsyncPostgresSaver.from_conn_string(DATABASE_URL) as checkpointer:
+    await checkpointer.setup()
 ```
+If constructing the connection/pool manually instead of `from_conn_string`, the connections passed to `AsyncPostgresSaver` **must** be opened with `autocommit=True` and `row_factory=dict_row` — `.setup()` silently fails to persist its DDL without `autocommit=True`. This is the single most common integration mistake reported for this package; flag it explicitly in the phase plan.
 
----
+**Transitive addition:** `orjson>=3.11.5` (pulled in by `langgraph-checkpoint-postgres` for fast checkpoint (de)serialization). Pure-Rust binary wheel, no numpy/protobuf entanglement — safe.
+
+### Frontend Toolchain (new — replaces Streamlit)
+
+| Technology | Version | Purpose | Why |
+|------------|---------|---------|-----|
+| `vite` | `^8.2.1` | Build tool / dev server | Current stable major; requires Node `^20.19.0 \|\| >=22.12.0` — pin CI/Docker Node image accordingly. |
+| `react` / `react-dom` | `^19.2.8` | UI framework | React 19 is the current stable line; no React 20 exists yet. |
+| `@vitejs/plugin-react` | `^6.0.5` | Vite React fast-refresh/JSX transform | Declares peer `vite: ^8.0.0` — matches the Vite pin above exactly. |
+| `@types/react` / `@types/react-dom` | `^19.2.18` / `^19.2.4` | TS types for React 19 | Must track the React major; mismatched majors are a common source of JSX typing errors. |
+| `typescript` | **`^5.9.3`** — do NOT use the `latest` npm tag | Type checking | See "TypeScript version — do not take `latest`" below. |
+
+**TypeScript version — do not take `latest`.** `npm view typescript` currently resolves `latest` to **7.0.2**, a from-scratch Go-native compiler port (GA July 2026, ~10x faster builds). It is a hard incompatibility for this project: `typescript-eslint` 8.66.0 (the standard ESLint↔TS integration) declares a peer constraint of `typescript: ">=4.8.4 <6.1.0"` — it explicitly excludes TS 7.x. TS 7.0 also ships without a stable programmatic API (promised for 7.1), which is exactly the API typescript-eslint's type-aware linting depends on. **Pin `typescript` to `^5.9.3`** (the current, actively-maintained top of the 5.x line) until typescript-eslint and the rest of the tsc-API-consuming ecosystem publish TS7-compatible majors. Re-evaluate TS7 adoption in a later milestone once `typescript-eslint` bumps its peer range.
+
+| Technology | Version | Purpose | Why |
+|------------|---------|---------|-----|
+| `@xyflow/react` | `^12.11.2` | Graph/flow canvas for the incident/topology view | Current stable major of React Flow (rebrand under the `@xyflow` scope); peer deps are just `react`/`react-dom >=17`, satisfied by React 19. |
+| `@dagrejs/dagre` | `^3.1.0` | Auto-layout for `@xyflow/react` node graphs | xyflow's own docs deliberately ship **no bundled layout engine** and point users at dagre, elkjs, or d3-hierarchy. Use `@dagrejs/dagre` (the actively maintained fork/successor), **not** the plain `dagre` package on npm — that one is stuck at `0.8.5` and effectively unmaintained. Dagre is the docs' recommendation "if you need to organize your flows into a tree" — appropriate for a service-topology/incident graph, which is fundamentally tree/DAG-shaped from a root incident node. Do not reach for `elkjs` unless a future requirement needs its much more configurable (and complex) layout algorithms; xyflow's own docs say they don't often recommend it for exactly that complexity reason. |
+
+### Server-Sent Events (FastAPI → dashboard streaming)
+
+| Technology | Version | Purpose | Why |
+|------------|---------|---------|-----|
+| `sse-starlette` | `>=3.0,<4` (currently resolves 3.4.8) | SSE response helper for FastAPI/Starlette | **Warranted, not overkill.** A plain `StreamingResponse(media_type="text/event-stream")` can emit bytes, but you'd hand-roll: correct `data:`/`event:`/`id:` framing, periodic keep-alive pings (needed because most reverse proxies and browsers time out an idle SSE connection), and server-side detection of client disconnects via `await request.is_disconnected()` polling. `sse-starlette`'s `EventSourceResponse` provides all three out of the box and is purpose-built for exactly this FastAPI use case. |
+
+**Compatibility:** `sse-starlette` 3.4.8 declares `starlette>=0.49.1` and `anyio>=4.7.0` — both already satisfied by the project's existing `starlette<1.4.0` pin (current resolved starlette is well above 0.49) and FastAPI's own `anyio` requirement. No new transitive surface; it adds zero new dependencies beyond what FastAPI already pulls in.
 
 ## Alternatives Considered
 
-| Recommended | Alternative | When to Use Alternative |
-|-------------|-------------|-------------------------|
-| GQLAlchemy | raw `neo4j` driver | Use neo4j driver directly if you don't need ORM-style node classes; slightly less overhead, but Cypher execution API is identical in practice |
-| GQLAlchemy | `mgclient` (Memgraph native C driver) | `mgclient` has lower latency but requires C extension compilation; not worth the Docker complexity for this project |
-| fastembed (local) | OpenAI `text-embedding-3-small` | Use OpenAI embeddings if runbook corpus exceeds ~10K documents or quality benchmarks require it; eliminates model download (~130MB) but adds API dependency |
-| clickhouse-connect | `clickhouse-driver` (old) | Never — `clickhouse-driver` is the legacy binary protocol client; `clickhouse-connect` is the Clickhouse Inc official HTTP client with async support |
-| LangGraph `create_react_agent` | Custom `StateGraph` | Use custom `StateGraph` if tool execution order must be strictly sequential and non-parallel; `create_react_agent` allows parallel tool calls which suits this use case |
-| Streamlit | FastAPI + React frontend | Use FastAPI+React only post-demo when the product needs user auth, multi-session, or custom rendering; Streamlit is correct for the 3-day sprint |
-| foundryctl (SigNoz Foundry) | Old `deploy/docker-compose.yaml` | The old `deploy/` path is **deprecated** in the SigNoz repo as of 2025; use Foundry exclusively |
-| Python 3.12 | Python 3.13 | Python 3.13 triggers GQLAlchemy's numpy<3.0 branch which is less battle-tested; 3.12 has full ecosystem support |
+| Category | Recommended | Alternative | Why Not |
+|----------|-------------|-------------|---------|
+| Postgres driver | `psycopg[binary,pool]` (psycopg3) | `asyncpg` | `langgraph-checkpoint-postgres` hard-requires psycopg3 (`psycopg>=3.2.0`, `psycopg-pool>=3.2.0`). Using asyncpg for app-level Postgres access alongside it would mean **two drivers, two pools, two failure modes** against the same database for no benefit — psycopg3's async API is equally capable. |
+| Layout engine | `@dagrejs/dagre` | `dagre` (original npm package) | Original `dagre` is unmaintained (last stable `0.8.5`); the community/xyflow ecosystem has moved to `@dagrejs/dagre` as the maintained successor. |
+| Layout engine | `@dagrejs/dagre` | `elkjs` | elkjs is far more configurable but a Java-to-JS port with a steep API surface; xyflow's own docs say they don't often recommend it due to support complexity. Reach for it only if dagre's tree-layout assumptions prove insufficient for the topology view. |
+| SSE | `sse-starlette` | Raw `StreamingResponse` | Sufficient for a true one-shot text stream, but SSE needs framing + keepalive + disconnect handling that `StreamingResponse` doesn't provide; reimplementing it is pure yak-shaving `sse-starlette` already solved. |
+| TypeScript | `^5.9.3` | `latest` (7.0.2) | TS7's Go-native compiler has no stable programmatic API yet and `typescript-eslint` explicitly excludes it (`<6.1.0` peer range) — adopting it now breaks lint tooling. Revisit once the ecosystem catches up. |
 
----
+## Compatibility Verification Against Existing Pins
 
-## What NOT to Use
+| Existing pin | New dependency | Result |
+|---|---|---|
+| `numpy>=1.26.4,<2.0` (hard pin, gqlalchemy) | `psycopg[binary,pool]`, `langgraph-checkpoint-postgres`, `sse-starlette` | **No conflict.** None of these three declare a numpy dependency at all (verified via PyPI `requires_dist` for each). |
+| `override-dependencies = ["tensorflow ; python_version > '99'"]` | same three packages | **Undisturbed.** None depend on tensorflow or protobuf; the override only needs to survive gqlalchemy's own declared (unused) dependency, which is untouched by this milestone. |
+| `langgraph-checkpoint>=4.1.0,<5` (currently unused) | `langgraph-checkpoint-postgres>=3.1.0,<4` | **Exact match** — this package's own declared range is `langgraph-checkpoint<5.0.0,>=4.1.0`, identical to the existing pin. Adding it activates the existing dependency; no version change required on `langgraph-checkpoint` itself. |
+| `langgraph>=1.2.10,<1.3` | `langgraph-checkpoint-postgres>=3.1.0,<4` | No direct constraint between them (checkpoint-postgres depends on `langgraph-checkpoint`, not `langgraph` directly) — safe. |
+| `starlette<1.4.0` | `sse-starlette>=3.0,<4` (needs `starlette>=0.49.1`) | Satisfied — the project's resolved starlette (some 1.3.x, per the existing `<1.4.0` ceiling) is well above `0.49.1`. |
+| `fastapi>=0.141.1` | `sse-starlette` | No FastAPI version constraint declared by `sse-starlette`; it only touches starlette/anyio, both already FastAPI dependencies. |
+
+**Net effect on the resolver:** the only genuinely new transitive package introduced by this milestone's Python-side additions is `orjson` (via `langgraph-checkpoint-postgres`). Nothing forces a numpy or protobuf bump.
+
+## Installation
+
+```bash
+# Backend additions (pyproject.toml [project.dependencies])
+uv add "psycopg[binary,pool]>=3.2.0,<4"
+uv add "langgraph-checkpoint-postgres>=3.1.0,<4"
+uv add "sse-starlette>=3.0,<4"
+```
+
+Resulting `pyproject.toml` additions (paste-ready):
+```toml
+dependencies = [
+    # ... existing entries unchanged ...
+    "psycopg[binary,pool]>=3.2.0,<4",
+    "langgraph-checkpoint-postgres>=3.1.0,<4",
+    "sse-starlette>=3.0,<4",
+]
+```
+
+Frontend `package.json` (new directory, e.g. `frontend/`):
+```json
+{
+  "dependencies": {
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "@xyflow/react": "^12.11.2",
+    "@dagrejs/dagre": "^3.1.0"
+  },
+  "devDependencies": {
+    "vite": "^8.2.1",
+    "@vitejs/plugin-react": "^6.0.5",
+    "typescript": "^5.9.3",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4"
+  }
+}
+```
+
+```bash
+npm create vite@latest frontend -- --template react-ts
+cd frontend
+npm install @xyflow/react @dagrejs/dagre
+npm install -D typescript@^5.9.3   # override whatever the scaffold pinned to latest
+```
+
+**Node requirement:** Vite 8 declares `engines.node: "^20.19.0 || >=22.12.0"` — ensure the dev container / CI image uses Node 20.19+ or 22.12+; Node 21 and pre-.19 Node 20 patch releases are explicitly excluded.
+
+## What NOT to Add
 
 | Avoid | Why | Use Instead |
 |-------|-----|-------------|
-| `docker-compose` v1 CLI | Deprecated binary; `depends_on` healthcheck syntax differs from Compose v2 spec; causes subtle startup ordering bugs | `docker compose` v2 plugin (included with Docker Desktop and Docker Engine 25+) |
-| `clickhouse-driver` | Binary protocol, unmaintained, no async | `clickhouse-connect` (official, HTTP protocol, async) |
-| `neo4j>=6.0.0` | Breaks GQLAlchemy's declared dependency `neo4j<6.0.0` | `neo4j==5.28.1` (latest 5.x; pulled in automatically by GQLAlchemy) |
-| `numpy>=2.0` | GQLAlchemy pins `numpy<2.0,>=1.26.4` for Python 3.10-3.12; importing GQLAlchemy with numpy 2.x installed will raise ImportError | `numpy==1.26.4` (explicitly pinned in pyproject.toml) |
-| `langchain` (monolithic) | The `langchain` meta-package installs stale versions; imports from it shadow `langchain-core` and `langchain-openai` | Import directly from `langchain_core`, `langchain_openai`, `langchain_anthropic` |
-| `latest` Docker tags | Non-deterministic; breaks demo reproducibility across machines/CI | Use explicit version tags as listed in Docker Compose section above |
-| Memgraph `memgraph/memgraph` (without MAGE) | Missing BFS/shortest-path Cypher procedures that the agent relies on; must use MAGE image | `memgraph/memgraph-mage:3.12.0` |
-| SigNoz clickhouse `24.3+` | SigNoz charts explicitly warn "not always tested with the latest version"; `24.1.2.5` is the tested-and-pinned version | `clickhouse/clickhouse-server:24.1.2.5` |
-
----
-
-## Version Compatibility Matrix
-
-| Package | Compatible With | Constraint | Notes |
-|---------|-----------------|------------|-------|
-| `langgraph==1.2.10` | `langchain-core>=1.4.7,<2` | Required | langgraph will refuse to import if langchain-core is out of range |
-| `langgraph==1.2.10` | `pydantic>=2.7.4` | Required | Pydantic v1 is not supported |
-| `GQLAlchemy==1.10.0` | `neo4j>=4.4.3,<6.0.0` | Required | neo4j 6.x breaks GQLAlchemy |
-| `GQLAlchemy==1.10.0` | `numpy>=1.26.4,<2.0` | Required on Python 3.10-3.12 | Must pin numpy; numpy 2.x co-installation causes ImportError |
-| `qdrant-client==1.19.0` | `fastembed>=0.8.0` | Optional dep | Install fastembed to enable in-process embedding; client detects it automatically |
-| `clickhouse-connect==1.6.0` | Python `>=3.10,<3.15` | Required | Declared in package metadata |
-| `streamlit==1.61.0` | Python `>=3.10` | Required | |
-| Memgraph `3.12.0` | Bolt protocol v4.4 | Compatible | neo4j driver communicates over Bolt; Memgraph implements the Bolt spec |
-| SigNoz `v0.135.1` | ClickHouse `24.1.x` | SigNoz-validated | SigNoz Helm chart pins `clickhouse-server:24.1.2-alpine`; do not upgrade ClickHouse independently |
-| OTel Demo `3.0.0` | OTel Collector contrib `0.157.0` | Pinned in .env | Demo compose file pins collector version |
-
----
-
-## Stack Patterns by Variant
-
-**For the 3-day demo sprint:**
-- Use `MemorySaver` checkpoint (in-memory, zero setup)
-- Use `fastembed` for embeddings (no API key required for runbook vectorization)
-- Run all services in a single `docker-compose.yml`
-- Single `casting.yaml` for foundryctl to deploy SigNoz subset
-
-**For production evolution post-demo:**
-- Swap `MemorySaver` → `AsyncPostgresSaver` (langgraph-checkpoint-postgres)
-- Replace `fastembed` with OpenAI embeddings if runbook corpus grows beyond internal use
-- Separate Docker Compose files per tier (infra, observability, agent)
-- Add `langsmith` tracing in production for agent audit trail
-
-**If the team prefers Anthropic Claude over OpenAI for synthesis:**
-- Replace `langchain-openai` with `langchain-anthropic` (same `@tool` interface, same `create_react_agent` call signature)
-- No other changes required
-
-**If the ClickHouse query latency is a bottleneck during demo:**
-- Pre-compute a `CREATE MATERIALIZED VIEW` for the paymentservice error rate over the last 5 minutes
-- Agent queries the materialized view instead of scanning raw traces table
-- SigNoz's ClickHouse schema uses `signoz_logs.logs` and `signoz_traces.distributed_trace_summary` as primary tables
-
----
-
-## Memgraph Bolt Connection Pattern
-
-```python
-# Correct GQLAlchemy connection for Memgraph 3.x
-from gqlalchemy import Memgraph
-
-db = Memgraph(
-    host="localhost",
-    port=7687,
-    username="",      # Memgraph OSS has no auth by default
-    password="",
-    encrypted=False,  # TLS disabled for local Docker
-)
-
-# Cypher BFS tool pattern
-def traverse_dependencies(service_name: str) -> list[dict]:
-    query = """
-    MATCH path = (start:Service {name: $name})-[:DEPENDS_ON*1..5]->(dep:Service)
-    RETURN [node IN nodes(path) | node.name] AS chain,
-           length(path) AS depth
-    ORDER BY depth
-    """
-    return list(db.execute_and_fetch(query, {"name": service_name}))
-```
-
----
-
-## SigNoz ClickHouse Schema Reference
-
-SigNoz stores data in two primary ClickHouse databases:
-
-```sql
--- Traces (for latency/error analysis)
-SELECT serviceName, COUNT(*) as error_count
-FROM signoz_traces.distributed_trace_summary
-WHERE serviceName = 'paymentservice'
-  AND statusCode = 'STATUS_CODE_ERROR'
-  AND timestamp > now() - INTERVAL 5 MINUTE
-GROUP BY serviceName
-
--- Logs
-SELECT body, timestamp, attributes_string
-FROM signoz_logs.logs
-WHERE attributes_string['service.name'] = 'paymentservice'
-  AND timestamp > now() - INTERVAL 5 MINUTE
-ORDER BY timestamp DESC
-LIMIT 50
-```
-
-ClickHouse-connect async query pattern for the agent tool:
-
-```python
-import clickhouse_connect
-
-client = clickhouse_connect.get_client(
-    host="localhost",
-    port=8123,
-    username="default",
-    password="",
-    database="signoz_traces",
-)
-```
-
----
-
-## Qdrant Runbook Embedding Pattern
-
-```python
-from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, VectorParams
-
-client = QdrantClient(host="localhost", port=6333)
-
-# Create collection with fastembed auto-sizing
-client.create_collection(
-    collection_name="runbooks",
-    vectors_config=VectorParams(size=384, distance=Distance.COSINE),
-    # BAAI/bge-small-en-v1.5 outputs 384-dim vectors
-)
-
-# Upsert with fastembed (embedding happens in-process)
-client.add(
-    collection_name="runbooks",
-    documents=["runbook text..."],
-    metadata=[{"service": "paymentservice", "severity": "P1"}],
-    ids=[1],
-)
-
-# Semantic search tool
-results = client.query(
-    collection_name="runbooks",
-    query_text="payment service crashing checkout",
-    limit=3,
-    query_filter=Filter(
-        must=[FieldCondition(key="severity", match=MatchValue(value="P1"))]
-    ),
-)
-```
-
----
+| `asyncpg` | Would create a second Postgres driver/pool alongside the one `langgraph-checkpoint-postgres` forces (psycopg3); doubles connection-pool surface for no gain | `psycopg[binary,pool]` |
+| `dagre` (plain npm package, unscoped) | Unmaintained, frozen at `0.8.5` | `@dagrejs/dagre` |
+| `typescript@latest` / unpinned `typescript` | Resolves to 7.0.2, which `typescript-eslint` 8.66.0 explicitly rejects (`<6.1.0` peer range) and which ships without a stable compiler API yet | `typescript@^5.9.3` |
+| Hand-rolled SSE via bare `StreamingResponse` | Reimplements framing/keepalive/disconnect-detection that `sse-starlette` already provides correctly | `sse-starlette` |
+| Calling `AsyncPostgresSaver` without `.setup()` | Checkpoint tables are never created; first checkpoint write fails at runtime, not at startup — easy to miss until first incident run | Call `await checkpointer.setup()` once during app lifespan startup |
+| Manually-built psycopg connections passed to `AsyncPostgresSaver` without `autocommit=True, row_factory=dict_row` | `.setup()`'s DDL silently fails to commit; documented as the most common integration bug for this package | Prefer `AsyncPostgresSaver.from_conn_string(...)`, or set both kwargs explicitly if constructing connections manually |
+| `elkjs` (for this milestone) | Correct but unnecessarily complex layout engine for a topology graph that's fundamentally tree/DAG-shaped; steep API, xyflow's own docs downplay it | `@dagrejs/dagre` |
 
 ## Sources
 
-- PyPI API (`pypi.org/pypi/{package}/json`) — langgraph 1.2.10, langchain-core 1.5.3, langchain-openai 1.4.1, langchain-anthropic 1.5.3, qdrant-client 1.19.0, clickhouse-connect 1.6.0, GQLAlchemy 1.10.0, streamlit 1.61.0, fastembed 0.8.0, pydantic 2.13.4, openai 2.53.0, langsmith 0.10.15 — HIGH confidence (live API)
-- Docker Hub API (`hub.docker.com/v2/repositories/{image}/tags`) — memgraph/memgraph-mage 3.12.0, qdrant/qdrant v1.19.0, memgraph/lab 2.13.0, clickhouse-server 24.1.2.5 — HIGH confidence (live API)
-- GitHub API (`api.github.com/repos/{org}/{repo}/releases/latest`) — SigNoz v0.135.1 (2026-07-31), Foundry v0.2.17 (2026-07-29), Memgraph MAGE 3.7.2 (2025-12-23), OTel Demo 3.0.0 (2026-07-24) — HIGH confidence (live API)
-- `github.com/SigNoz/charts/main/charts/clickhouse/values.yaml` — ClickHouse `24.1.2-alpine` pin with comment "SigNoz does not support all versions" — HIGH confidence
-- `github.com/open-telemetry/opentelemetry-demo/refs/tags/3.0.0/.env` — OTel Collector contrib 0.157.0, image naming pattern `ghcr.io/open-telemetry/demo:3.0.0-{service}` — HIGH confidence
-- `github.com/langchain-ai/langgraph/libs/prebuilt/langgraph/prebuilt/__init__.py` — confirms `create_react_agent`, `ToolNode`, `tools_condition` export surface — HIGH confidence
-- GQLAlchemy 1.10.0 PyPI metadata — neo4j<6.0.0 and numpy<2.0 constraints confirmed — HIGH confidence
-
----
-
-*Stack research for: AI SRE Agent (LangGraph + Memgraph + SigNoz + Qdrant)*
-*Researched: 2026-08-05*
+- PyPI JSON API (`pypi.org/pypi/{package}/json`) — `psycopg` 3.3.4, `langgraph-checkpoint-postgres` 3.1.2, `sse-starlette` 3.4.8, `starlette` 1.4.1, `fastapi` 0.141.1 (requires `starlette>=0.46.0`) — HIGH confidence (live API, `requires_dist` inspected directly for numpy/protobuf/driver constraints)
+- npm registry API (`registry.npmjs.org/{package}/latest` and full version list) — `vite` 8.2.1 (engines `node ^20.19.0 || >=22.12.0`), `react`/`react-dom` 19.2.8, `typescript` dist-tags (`latest` 7.0.2, `rc` 7.0.1-rc, `next` 7.1.0-dev; highest stable 5.x line is 5.9.3), `@xyflow/react` 12.11.2 (peer `react/react-dom >=17`), `@dagrejs/dagre` 3.1.0 vs unmaintained `dagre` 0.8.5, `elkjs` 0.12.0, `@vitejs/plugin-react` 6.0.5 (peer `vite ^8.0.0`), `typescript-eslint`/`@typescript-eslint/eslint-plugin` 8.66.0 (peer `typescript >=4.8.4 <6.1.0`) — HIGH confidence (live API)
+- WebSearch: LangChain reference docs (`reference.langchain.com/python/langgraph.checkpoint.postgres/...`) confirming `AsyncPostgresSaver.setup()` semantics, table names, and the `autocommit=True`/`row_factory=dict_row` requirement for manually-constructed connections — MEDIUM-HIGH confidence (official docs, corroborated by community blog posts describing the same failure mode)
+- WebSearch: React Flow / xyflow docs (`reactflow.dev/learn/layouting/layouting`, `reactflow.dev/examples/layout/dagre`, `reactflow.dev/examples/layout/elkjs`) confirming xyflow ships no bundled layout engine and its own comparative guidance on dagre vs elkjs — HIGH confidence (official docs)
+- WebSearch: TypeScript 7.0 GA coverage (InfoQ, "TypeScript 7.0 Is GA" — July 2026) corroborating the native Go-compiler rewrite and the missing stable programmatic API in 7.0 — MEDIUM confidence (secondary press coverage, cross-checked against the npm `dist-tags` showing `next: 7.1.0-dev...` which corroborates 7.1 as the still-unreleased version that would add the API back)
