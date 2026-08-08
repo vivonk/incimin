@@ -15,6 +15,9 @@ export default defineConfig({
     host: '127.0.0.1',
     port: 5173,
     strictPort: true,
+    // Allow ngrok tunnel hostname (and any *.ngrok.app subdomain) so the dev
+    // server accepts requests forwarded through the tunnel.
+    allowedHosts: ['incimin.ngrok.app', '.ngrok.app'],
     proxy: {
       '/api': { target: 'http://127.0.0.1:8088', changeOrigin: true },
       '/webhook': { target: 'http://127.0.0.1:8088', changeOrigin: true },
