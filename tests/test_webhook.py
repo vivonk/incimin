@@ -9,9 +9,11 @@ import threading
 import types
 
 import pytest
+from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.messages import AIMessage, ToolMessage
 from starlette.testclient import TestClient
 
+from src.agent import tracing
 from src.webhook import app as webhook_app
 from src.webhook.alert import parse_alerts, parse_time
 
@@ -191,12 +193,23 @@ def test_health(client):
 
 @pytest.fixture
 def fake_graph(monkeypatch):
-    """Install a stand-in `src.agent.graph` whose stream yields canned node updates."""
+    """Install a stand-in `src.agent.graph` whose stream yields canned node updates.
+
+    Returns the recorder the installer captured the call kwargs into, so a test can assert on
+    the config the run was given as well as on the answer it produced.
+    """
+    captured = {}
 
     def install(updates):
+        def stream(inputs, stream_mode, config=None):
+            captured["inputs"] = inputs
+            captured["config"] = config
+            return iter(updates)
+
         module = types.ModuleType("src.agent.graph")
-        module.app = types.SimpleNamespace(stream=lambda inputs, stream_mode: iter(updates))
+        module.app = types.SimpleNamespace(stream=stream)
         monkeypatch.setitem(sys.modules, "src.agent.graph", module)
+        return captured
 
     return install
 
@@ -273,3 +286,100 @@ def test_unknown_target_is_logged_not_raised(monkeypatch, caplog):
     webhook_app.run_alert(ctx)  # must not raise
 
     assert "unknown INCIMIN_WEBHOOK_TARGET" in caplog.text
+
+
+# -- Langfuse tracing ------------------------------------------------------
+#
+# Whether a trace is emitted depends on credentials that CI does not have, so these assert on
+# the config the alert produces rather than on anything reaching Langfuse. The tracing module's
+# own behaviour is covered in tests/test_tracing.py.
+
+
+class _Handler(BaseCallbackHandler):
+    pass
+
+
+@pytest.fixture(autouse=True)
+def no_real_langfuse(monkeypatch):
+    """Keep the suite off the network.
+
+    A developer running `pytest` with a populated `.env` would otherwise construct a live
+    handler and post test traces into their real Langfuse project. Tracing is off unless a test
+    opts in via the `traced` fixture.
+    """
+    monkeypatch.delenv("LANGFUSE_PUBLIC_KEY", raising=False)
+    monkeypatch.delenv("LANGFUSE_SECRET_KEY", raising=False)
+    tracing.reset()
+    yield
+    tracing.reset()
+
+
+@pytest.fixture
+def traced(monkeypatch):
+    """Pretend Langfuse is configured, so trace_config() populates rather than no-ops."""
+    handler = _Handler()
+    monkeypatch.setattr(tracing, "_handler", handler)
+    monkeypatch.setattr(tracing, "_resolved", True)
+    return handler
+
+
+def test_agent_run_is_traced_with_alert_attributes(fake_graph, traced):
+    captured = fake_graph([{"finalize": {"messages": [AIMessage(content="done")]}}])
+
+    _run()
+
+    config = captured["config"]
+    metadata = config["metadata"]
+    assert config["callbacks"] == [traced]
+    assert metadata["langfuse_trace_name"] == "sre-alert:PaymentServiceHighErrorRate"
+    # The fingerprint is stable across Alertmanager resends, so one incident is one session.
+    assert metadata["langfuse_session_id"] == "abc123fingerprint"
+    assert set(metadata["langfuse_tags"]) == {
+        "incimin-webhook",
+        "agent",
+        "critical",
+        "paymentservice",
+    }
+    assert metadata["service"] == "paymentservice"
+
+
+def test_untraced_run_passes_an_empty_config(fake_graph):
+    """No credentials (see `no_real_langfuse`) — the run still happens, just uninstrumented."""
+    captured = fake_graph([{"finalize": {"messages": [AIMessage(content="done")]}}])
+
+    assert _run() == "done"
+    assert captured["config"] == {}
+
+
+def test_tags_omit_absent_alert_fields(traced):
+    """severity and service are optional on an AlertContext; neither may become a "None" tag."""
+    ctx = parse_alerts({"alerts": [{"labels": {"alertname": "Bare"}}]})[0]
+
+    config = webhook_app.trace_config(ctx, "agent")
+
+    assert config["metadata"]["langfuse_tags"] == ["incimin-webhook", "agent"]
+
+
+def test_spans_are_flushed_after_each_run(monkeypatch):
+    """Agent threads are short-lived; without an explicit flush the trace never ships."""
+    flushed = []
+    monkeypatch.setattr(tracing, "flush", lambda: flushed.append(True))
+    monkeypatch.setattr(webhook_app, "TARGETS", {"agent": lambda ctx: "answer"})
+
+    webhook_app.run_alert(parse_alerts(FIRING_PAYLOAD)[0])
+
+    assert flushed == [True]
+
+
+def test_flush_happens_even_when_the_agent_fails(monkeypatch):
+    flushed = []
+    monkeypatch.setattr(tracing, "flush", lambda: flushed.append(True))
+
+    def explode(_ctx):
+        raise RuntimeError("data plane down")
+
+    monkeypatch.setattr(webhook_app, "TARGETS", {"agent": explode})
+
+    webhook_app.run_alert(parse_alerts(FIRING_PAYLOAD)[0])  # must not raise
+
+    assert flushed == [True]
