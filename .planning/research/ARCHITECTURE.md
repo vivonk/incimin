@@ -1,14 +1,21 @@
 # Architecture Research — v1.7 Incident Dashboard
 
+<<<<<<< Updated upstream
 **Domain:** Adding durable human-in-the-loop, progress streaming, and a browser dashboard to an existing LangGraph SRE agent
 **Researched:** 2026-08-08
 **Confidence:** HIGH (LangGraph HITL/streaming verified against live docs); MEDIUM (SSE fan-out, asyncio task lifecycle — corroborated by current community sources, not project-specific benchmarked)
+=======
+**Domain:** Plugin-based Service Topology Integration
+**Researched:** 2026-08-06
+**Confidence:** HIGH
+>>>>>>> Stashed changes
 
 ## Standard Architecture
 
 ### System Overview
 
 ```
+<<<<<<< Updated upstream
 ┌──────────────────────────────────────────────────────────────────────┐
 │  Browser (Vite SPA)                                                  │
 │  - dashboard: incident list, live timeline, approve/reject controls  │
@@ -42,11 +49,41 @@
 ┌────────────────────────▼────────────────────────────────────────────┐
 │  Memgraph · SigNoz/ClickHouse · Qdrant · Langfuse (unchanged)        │
 └────────────────────────────────────────────────────────────────────┘
+=======
+┌─────────────────────────────────────────────────────────────┐
+│                      FastAPI Backend                        │
+├─────────────────────────────────────────────────────────────┤
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │                Topology Manager                     │    │
+│  │             (Core Abstraction Layer)                │    │
+│  └────┬───────────────────────────────────────────┬────┘    │
+│       │                                           │         │
+├───────┴───────────────────────────────────────────┴─────────┤
+│                     Plugin Registry                         │
+├─────────────────────────────────────────────────────────────┤
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐       │
+│  │ SigNozPlugin │  │ DataDogPlugin│  │ PromPlugin   │       │
+│  │ (Active)     │  │ (Future)     │  │ (Future)     │       │
+│  └──────┬───────┘  └──────────────┘  └──────────────┘       │
+│         │                                                   │
+├─────────┴───────────────────────────────────────────────────┤
+│                   External Integrations                     │
+│  ┌────────────────────────┐                                 │
+│  │ SigNoz API/ClickHouse  │                                 │
+│  └────────────────────────┘                                 │
+├─────────────────────────────────────────────────────────────┤
+│                     Data Store Layer                        │
+│  ┌────────────────────────┐                                 │
+│  │ Memgraph (Topology)    │                                 │
+│  └────────────────────────┘                                 │
+└─────────────────────────────────────────────────────────────┘
+>>>>>>> Stashed changes
 ```
 
 ### Component Responsibilities
 
 | Component | Responsibility | Typical Implementation |
+<<<<<<< Updated upstream
 |-----------|----------------|-------------------------|
 | FastAPI app | Webhook intake, SSE fan-out, static SPA serving, HITL resume endpoint | Single ASGI app, replaces `src/webhook/app.py` |
 | Agent run task | Drives `graph.astream()` per incident to completion or pause | `asyncio.create_task`, tracked in a module-level set |
@@ -198,3 +235,168 @@ The natural insertion point is a **new node between `verifier` and `finalize`**:
 ---
 *Architecture research for: incimin.io v1.7 Incident Dashboard milestone*
 *Researched: 2026-08-08*
+=======
+|-----------|----------------|------------------------|
+| `TopologyManager` | Orchestrates fetching from plugins and persisting to DB. | Python class executing scheduled/triggered tasks. |
+| `PluginInterface` | Defines the standard contract for fetching topology data. | Python `abc.ABC` with async methods. |
+| `SigNozPlugin` | Connects to SigNoz, fetches traces/topology, translates to standard model. | Concrete implementation of `PluginInterface`. |
+| Internal Models | Standardize service nodes and edges with provenance metadata. | Pydantic models with `source`, `external_id`, etc. |
+| `db.py` (Memgraph API) | Persists standard models into the graph database. | Async Neo4j/Memgraph driver using Cypher `MERGE`. |
+
+## Recommended Project Structure
+
+```
+src/production/
+├── main.py                  # MODIFIED: Add endpoint/trigger for topology sync
+├── db.py                    # MODIFIED: Add topology merge queries
+├── topology/                # NEW
+│   ├── __init__.py          # NEW
+│   ├── manager.py           # NEW: TopologyManager orchestration
+│   ├── models.py            # NEW: Pydantic Canonical Models
+│   └── plugins/             # NEW
+│       ├── __init__.py      # NEW
+│       ├── base.py          # NEW: Plugin abstract base class
+│       └── signoz.py        # NEW: SigNozServiceMap plugin
+```
+
+### Structure Rationale
+
+- **`topology/`:** Encapsulates the core domain logic for topology abstraction, keeping `main.py` clean.
+- **`topology/plugins/`:** Separates concrete implementations from core logic, enabling a plug-and-play architecture for future providers (DataDog, Prometheus).
+- **`models.py`:** Ensures a single source of truth for the Canonical Data Model, making it easy to enforce the Entity Metadata Principle.
+
+## Architectural Patterns
+
+### Pattern 1: Strategy Pattern (Plugin Architecture)
+
+**What:** Defines a standard `PluginInterface` for topology providers. The `TopologyManager` uses the interface without knowing provider-specific details.
+**When to use:** When you need to integrate with multiple disparate external systems that provide logically similar data (e.g., service maps from different OTel backends).
+**Trade-offs:** Adds some boilerplate (interfaces, dynamic loading or registry), but is strictly required for the "Extensible Architecture" goal.
+
+**Example:**
+```python
+from abc import ABC, abstractmethod
+from typing import List
+from .models import ServiceEdge
+
+class TopologyPlugin(ABC):
+    @property
+    @abstractmethod
+    def source_name(self) -> str:
+        pass
+
+    @abstractmethod
+    async def fetch_topology(self) -> List[ServiceEdge]:
+        """Fetch and parse topology into canonical internal format."""
+        pass
+```
+
+### Pattern 2: Canonical Data Model with Provenance
+
+**What:** Translate external payloads immediately into an internal standardized format containing required provenance (`source`, `external_id`, `fetched_at`, `schema_version`).
+**When to use:** Always, as per the `AGENTS.md` Entity Metadata Principle. Never store a bare external payload as an internal entity.
+**Trade-offs:** Requires writing explicit mapping layers in each plugin, but guarantees database integrity and traceable lineage.
+
+**Example:**
+```python
+from pydantic import BaseModel
+from datetime import datetime
+
+class ServiceNode(BaseModel):
+    name: str
+    # Provenance fields (Entity Metadata Principle)
+    source: str
+    external_id: str
+    fetched_at: datetime
+    schema_version: str = "1.0"
+```
+
+## Data Flow
+
+### Request Flow (Topology Sync)
+
+```
+[API Trigger or Cron]
+    ↓
+[TopologyManager.sync()]
+    ↓
+    ├──→ [SigNozPlugin.fetch_topology()] 
+    │       ↓
+    │    (Query SigNoz API / ClickHouse)
+    │       ↓
+    │    (Map to Canonical ServiceNode/Edge Models)
+    │       ↓
+    ←─── (Return List[ServiceEdge])
+    ↓
+[db.py (merge_topology)]
+    ↓
+    (Execute Cypher MERGE with Metadata)
+    ↓
+[Memgraph Database]
+```
+
+## Scaling Considerations
+
+| Scale | Architecture Adjustments |
+|-------|--------------------------|
+| 0-100 Services | Synchronous fetch and monolithic Cypher merge query. |
+| 100-1,000 Services | Batch inserts in Cypher; paginate external plugin fetches. |
+| 1,000+ Services | Async message queue (Kafka/Redis) to stream topology updates; delta-based graph updates instead of full sync. |
+
+### Scaling Priorities
+
+1. **First bottleneck:** Large Cypher transactions blocking the Memgraph event loop. Fix by batching nodes/edges in chunks of 500.
+2. **Second bottleneck:** SigNoz API rate limits or slow clickhouse queries for full topology extraction. Fix by requesting only recent telemetry window (e.g., last 1h).
+
+## Anti-Patterns
+
+### Anti-Pattern 1: Bare External Payloads
+
+**What people do:** Save the raw JSON response from SigNoz directly into Memgraph node properties.
+**Why it's wrong:** Violates the Entity Metadata Principle. Makes it impossible to know where the data came from, when it was fetched, or how to map it to future DataDog data.
+**Do this instead:** Plugins must map the external data into the canonical `ServiceNode` / `ServiceEdge` models, attaching `source`, `external_id`, `fetched_at`, and `schema_version`.
+
+### Anti-Pattern 2: Hardcoding Provider Logic in the Manager
+
+**What people do:** Writing `if provider == 'signoz': do_signoz_stuff()` inside the `TopologyManager`.
+**Why it's wrong:** Violates Open-Closed Principle. Adding a new provider requires modifying the core orchestration layer.
+**Do this instead:** Use the Strategy Pattern. The Manager iterates over registered implementations of `TopologyPlugin` and calls `fetch_topology()`.
+
+## Integration Points
+
+### External Services
+
+| Service | Integration Pattern | Notes |
+|---------|---------------------|-------|
+| SigNoz API/ClickHouse | REST/SQL via `SigNozPlugin` | Needs to handle authentication and connection pooling. Only the plugin should know about SigNoz internals. |
+
+### Internal Boundaries
+
+| Boundary | Communication | Notes |
+|----------|---------------|-------|
+| Manager ↔ Plugins | Python Async Method Call | Plugins return standardized Pydantic models. |
+| Manager ↔ `db.py` | Python Async Method Call | `db.py` requires canonical models to construct correct Cypher `MERGE` queries guaranteeing metadata. |
+
+## Suggested Build Order
+
+To properly handle dependencies and ensure smooth integration into the existing FastAPI backend, follow this sequence:
+
+1. **Phase 1: Canonical Models (`topology/models.py`)** 
+   - Define `ServiceNode` and `ServiceEdge` Pydantic models.
+   - Enforce the Entity Metadata Principle (`source`, `external_id`, `fetched_at`, `schema_version`).
+2. **Phase 2: Plugin Interface (`topology/plugins/base.py`)**
+   - Create the abstract base class defining the contract for `fetch_topology()`.
+3. **Phase 3: Data Access Layer (`db.py` modified)**
+   - Add Cypher queries (`merge_topology`) to ingest canonical models into Memgraph.
+   - Ensure the query sets the provenance fields.
+4. **Phase 4: SigNoz Plugin (`topology/plugins/signoz.py`)**
+   - Implement the interface. Connect to SigNoz, fetch topology, and translate it to the canonical models.
+5. **Phase 5: Topology Manager (`topology/manager.py`)**
+   - Build the orchestration logic that registers plugins, invokes them, and passes the result to `db.py`.
+6. **Phase 6: API Integration (`main.py` modified)**
+   - Wire the `TopologyManager` to a FastAPI endpoint (e.g., `/api/v1/topology/sync`) or a startup event for triggering the sync.
+
+---
+*Architecture research for: Plugin-based Service Topology Integration*
+*Researched: 2026-08-06*
+>>>>>>> Stashed changes

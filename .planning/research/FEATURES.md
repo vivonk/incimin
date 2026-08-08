@@ -1,5 +1,6 @@
 # Feature Research
 
+<<<<<<< Updated upstream
 **Domain:** Incident/alert-triage dashboard for an autonomous SRE agent (v1.7 milestone)
 **Researched:** 2026-08-08
 **Confidence:** MEDIUM (web search across official vendor docs — PagerDuty, incident.io, Grafana OnCall, AWS SSM, StackStorm, Temporal, Airflow, n8n, Langfuse, LangGraph — cross-checked but not primary-source verified against source code)
@@ -67,10 +68,71 @@ Received          — webhook ingested, persisted, agent run enqueued
 **Why this differs from PagerDuty/incident.io:** those tools' vocabularies (triggered/acknowledged/resolved; declared/investigating/fixing/monitoring/closed) assume the *responder* is a human doing the work and the tool is tracking their progress. Here the agent is the actor for Investigating; the human only enters at Awaiting Approval. Reusing PagerDuty's "Acknowledged" would be misleading — nobody has acknowledged anything, an *agent* is investigating. Naming the mid-run states accurately is what makes this product's dashboard demonstrate its actual value rather than mimicking a paging tool it isn't.
 
 **Dependency:** requires the Postgres status column (already decided) and the `interrupt()`/checkpointer plumbing (already decided) — no net-new infrastructure, this is a status-enum and UI-label decision.
+=======
+**Domain:** Python Plugin Architecture for Service Topology Integration
+**Researched:** 2026-08-06
+**Confidence:** HIGH
+
+## Python Plugin Architectures: Expected Behavior
+
+Typically in Python, plugin architectures are implemented via one of three patterns:
+
+1. **Object-Oriented ABCs + Registry (Simple & Internal):** Define a base class (`abc.ABC`) and a registry dictionary. Plugins inherit from the base class and register themselves upon import.
+2. `pluggy` **(Event-driven):** The pytest plugin system. Great for hook-based architectures where multiple plugins respond to the same event.
+3. `setuptools entry_points` **(Third-party):** Allows external pip packages to register plugins for a core package.
+
+**Expected Approach for Our App:** For a single-org enterprise deployment where plugins are maintained internally, **Pattern 1 (ABCs + Simple Registry)** is the expected behavior. It keeps complexity low, enforces strict contracts via abstract methods, and integrates easily into our LangGraph state machine.
+
+## Feature Landscape
+
+
+
+### Table Stakes (Users Expect These)
+
+Features users assume exist. Missing these = product feels incomplete.
+
+
+| Feature                                    | Why Expected                                                                 | Complexity | Notes                                                                                                                                        |
+| ------------------------------------------ | ---------------------------------------------------------------------------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Core Abstraction Layer (ABC)**           | Ensures standard interaction and outputs across all providers.               | LOW        | Implement `TopologyProvider` interface with methods like `fetch_topology()`.                                                                 |
+| **Standardized Topology Data Model**       | Downstream consumers (Memgraph ingestion) need a consistent internal schema. | MEDIUM     | **CRITICAL:** Must include metadata fields `source`, `external_id`, `fetched_at`, and `schema_version` as per the Entity Metadata Principle. |
+| **Dynamic Plugin Registry**                | Ability to dynamically load plugins via configuration.                       | LOW        | Use a simple dictionary registry or `importlib` to discover internal plugins.                                                                |
+| **SigNoz Plugin (**`SigNozServiceMap`**)** | Need at least one working plugin to prove the architecture.                  | MEDIUM     | The first implementation. Will parse SigNoz API output into the standardized core format.                                                    |
+
+
+
+
+### Differentiators (Competitive Advantage)
+
+Features that set the product apart. Not required, but valuable.
+
+
+| Feature                      | Value Proposition                                                                         | Complexity | Notes                                                                                                 |
+| ---------------------------- | ----------------------------------------------------------------------------------------- | ---------- | ----------------------------------------------------------------------------------------------------- |
+| **Plugin Failure Isolation** | If a provider's API times out, the core system falls back gracefully instead of crashing. | HIGH       | Implement circuit breakers and strict timeout wrappers around plugin execution.                       |
+| **Dual Identity Provenance** | Complete traceability for auditability and debugging.                                     | MEDIUM     | Retain both `external_id` (from provider) and internal ID. Aligns with backend metadata requirements. |
+
+
+
+
+### Anti-Features (Commonly Requested, Often Problematic)
+
+Features that seem good but create problems.
+
+
+| Feature                                            | Why Requested                                                         | Why Problematic                                                                         | Alternative                                                                               |
+| -------------------------------------------------- | --------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| **Automated Dependency Inference (LLM)**           | "Smart" topology generation when provider data is fuzzy.              | Introduces hallucination risk in the critical path, violating architecture constraints. | Strict Cypher BFS traversal on raw, deterministic dependency data provided by the plugin. |
+| **External Plugin Ecosystem (**`entry_points`**)** | Allowing third-party devs to write custom pip packages for the agent. | Over-engineered for a single-org deployment; adds security and maintenance overhead.    | Keep plugins internal to the repository using a simple module registry.                   |
+
+
+
+>>>>>>> Stashed changes
 
 ## Feature Dependencies
 
 ```
+<<<<<<< Updated upstream
 Alert persistence (Postgres, SigNoz metadata) [existing v1.7 scope]
     └──requires──> Alert list with status/severity/timestamps        [table stakes]
                        └──enhances──> Filter/sort on list             [table stakes]
@@ -93,10 +155,24 @@ Fixed committed SigNoz fixture [existing v1.7 scope]
 Live step graph ──conflicts──> Graph authoring/editing UI (n8n/Airflow-style)
 Approval gate (single approver) ──conflicts──> Multi-approver quorum (SSM-style)
 Agent-lifecycle status enum ──conflicts──> Configurable/custom status lifecycle (incident.io-style)
+=======
+[Core Abstraction Layer]
+    └──requires──> [Standardized Topology Data Model]
+
+[SigNoz Plugin]
+    └──requires──> [Core Abstraction Layer]
+    └──requires──> [Existing SigNoz Webhook Infrastructure]
+
+[Plugin Registry]
+    └──requires──> [Core Abstraction Layer]
+>>>>>>> Stashed changes
 ```
+
+
 
 ### Dependency Notes
 
+<<<<<<< Updated upstream
 - **Live step graph requires SSE event stream:** the graph is only "live" if the agent emits structured per-node start/end/error events as it runs; this is new work on the agent side (event emission), not just the frontend — flag for phase planning as agent-side instrumentation, not purely a UI task.
 - **Approval gate requires `interrupt()` + `AsyncPostgresSaver`:** already decided in PROJECT.md; the dashboard work is additive UI/audit on top of durable HITL infrastructure, not a new mechanism.
 - **Timeline requires the audit table:** don't build a separate "activity log" data model — the audit table already mandated for approvals should be the single source for the timeline view too (avoid two overlapping event stores).
@@ -182,3 +258,66 @@ Minimum viable product for this milestone — what's needed to demonstrate the c
 ---
 *Feature research for: incident/alert-triage dashboard UX, HITL approval UX, and agent-run visualization, scoped to incimin.io v1.7*
 *Researched: 2026-08-08*
+=======
+- **[Core Abstraction Layer] requires [Standardized Topology Data Model]:** The interface methods must know what data model to return to ensure standardization.
+- **[SigNoz Plugin] requires [Core Abstraction Layer]:** Must implement the defined base interface to integrate with the agent.
+- **[SigNoz Plugin] requires [Existing SigNoz Webhook Infrastructure]:** Depends on the already built ClickHouse data pipeline to extract topology information.
+- **[Plugin Registry] requires [Core Abstraction Layer]:** Needs to validate that registered modules conform to the required contract.
+
+
+
+## MVP Definition
+
+
+
+### Launch With (v1.6)
+
+Minimum viable product — what's needed to validate the concept.
+
+- [x] Standardized Topology Data Model — Needed to normalize outputs and enforce metadata provenance.
+- [x] Core Abstraction Layer (ABC) — Defines the strict contract for plugins.
+- [x] Simple Plugin Registry — To discover and load active plugins.
+- [x] SigNoz Plugin (`SigNozServiceMap`) — To validate the architecture and fetch the initial topology graph.
+
+
+
+### Add After Validation (v1.x)
+
+Features to add once core is working.
+
+- [ ] DataDog / Prometheus Plugins — To expand provider support.
+- [ ] Plugin Isolation/Circuit Breakers — For resilience when calling third-party APIs.
+
+
+
+### Future Consideration (v2+)
+
+Features to defer until product-market fit is established.
+
+- [ ] Hot-reloading Plugins — Overkill for current deployment strategy.
+- [ ] Third-party External Plugin Support — Not needed for single-org deployment.
+
+
+
+## Feature Prioritization Matrix
+
+
+| Feature                          | User Value | Implementation Cost | Priority |
+| -------------------------------- | ---------- | ------------------- | -------- |
+| Standardized Topology Data Model | HIGH       | LOW                 | P1       |
+| Core Abstraction Layer           | HIGH       | LOW                 | P1       |
+| SigNoz Plugin                    | HIGH       | MEDIUM              | P1       |
+| Simple Plugin Registry           | HIGH       | LOW                 | P1       |
+| Dual Identity Provenance         | HIGH       | LOW                 | P1       |
+| Plugin Failure Isolation         | MEDIUM     | HIGH                | P2       |
+| DataDog Plugin                   | MEDIUM     | MEDIUM              | P2       |
+| Third-party Extensibility        | LOW        | HIGH                | P3       |
+
+
+**Priority key:**
+
+- P1: Must have for launch
+- P2: Should have, add when possible
+- P3: Nice to have, future consideration
+
+>>>>>>> Stashed changes

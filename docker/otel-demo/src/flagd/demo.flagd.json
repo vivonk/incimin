@@ -11,7 +11,7 @@
       }
     },
     "adHighCpu": {
-      "defaultVariant": "off",
+      "defaultVariant": "on",
       "description": "Triggers high cpu load in the ad service",
       "state": "ENABLED",
       "variants": {
@@ -29,7 +29,7 @@
       }
     },
     "cartFailure": {
-      "defaultVariant": "off",
+      "defaultVariant": "100%",
       "description": "Fail cart service n% of the time",
       "state": "ENABLED",
       "variants": {
@@ -75,7 +75,7 @@
       }
     },
     "intlShippingSlowdown": {
-      "defaultVariant": "off",
+      "defaultVariant": "10sec",
       "description": "Delays international shipping responses to simulate overseas shipping delay",
       "state": "ENABLED",
       "variants": {
@@ -114,7 +114,7 @@
       }
     },
     "paymentFailure": {
-      "defaultVariant": "off",
+      "defaultVariant": "100%",
       "description": "Fail payment service charge requests n%",
       "state": "ENABLED",
       "variants": {

@@ -32,4 +32,4 @@ if __name__ == '__main__':
     now_ns = int(time.time() * 1e9)
     hour_ago_ns = now_ns - int(3600 * 1e9)
     
-    query_logs('paymentservice', hour_ago_ns, now_ns)
+    query_logs('payment', hour_ago_ns, now_ns)

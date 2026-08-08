@@ -1,5 +1,6 @@
 # Pitfalls Research
 
+<<<<<<< Updated upstream
 **Domain:** Adding Postgres persistence, LangGraph HITL interrupts, SSE live updates, a React step-graph SPA, and gated remediation execution to an existing threading-based webhook + no-checkpointer LangGraph agent.
 **Researched:** 2026-08-08
 **Confidence:** HIGH (LangGraph interrupt semantics, Alertmanager delivery semantics, Postgres ON CONFLICT pattern, asyncio task GC — all confirmed against current docs/issues; MEDIUM on SSE/React Flow specifics, which are well-documented community patterns rather than versioned API guarantees)
@@ -150,6 +151,93 @@ Between "human clicks Approve" and "executor actually runs the command," several
 **How to avoid:** keep a module-level `set()` of in-flight tasks, add each new task to it, and register a `task.add_done_callback(tasks.discard)` so the set self-cleans on completion while holding a strong reference for the task's full lifetime; the done-callback (or an explicit `try/except` inside the coroutine, matching the existing `run_alert`'s "must never raise" contract) is what surfaces exceptions into structured logs instead of asyncio's fallback logger. On FastAPI shutdown (lifespan), await/cancel all tasks in the set with a timeout so a reload/redeploy doesn't kill in-flight agent runs invisibly — or, better, rely on the checkpointer (Phase 11) so an interrupted/killed run resumes on next process start rather than needing graceful in-process shutdown at all.
 **Warning signs:** agent runs that "just stop" with no log line at all (vs. the current code's guaranteed `log.exception` on any failure); run count metrics that don't match completed+failed counts.
 **Phase to address:** Phase 10/11 boundary — whichever phase converts the webhook handler to async and replaces `threading.Thread` must adopt the strong-reference task-set pattern as part of that conversion, not as an afterthought.
+=======
+**Domain:** Plugin-Based Architecture for Service Topology Integration (OTEL Providers)
+**Researched:** 2026-08-06
+**Confidence:** HIGH
+
+## Critical Pitfalls
+
+### Pitfall 1: Leaking Provider-Specific Concepts into the Core Abstraction
+
+**What goes wrong:**
+The core topology graph schema is accidentally designed around the shape of the first implemented provider (e.g., SigNoz). When a second provider (like DataDog) is added, it doesn't fit the schema, requiring massive refactoring of the core abstraction.
+
+**Why it happens:**
+Developers optimizing for speed on the first plugin simply pass the raw provider JSON directly to the database layer or build models that 1:1 match the first provider's API.
+
+**How to avoid:**
+Define a strict, provider-agnostic internal Domain Model for nodes and edges (e.g., using Pydantic). Force all plugins to translate their specific payloads into this unified model before it reaches the core layer. The core layer must never import or reference plugin-specific types.
+
+**Warning signs:**
+- Core topology models contain fields like `signoz_trace_id` or `datadog_tags`.
+- The first plugin does zero translation and just passes `kwargs` to the core layer.
+
+**Phase to address:**
+Core Abstraction Layer Design & Schema Definition Phase.
+
+---
+
+### Pitfall 2: Missing Provenance / Bare External Payloads
+
+**What goes wrong:**
+Topology entities are retrieved from external systems (SigNoz, DataDog) and persisted internally without tracking where they came from. This causes unresolvable ID collisions and makes debugging impossible when incorrect topology data is ingested.
+
+**Why it happens:**
+Ignoring the Entity Metadata Principle. Developers persist the raw external payload as the internal entity to save time.
+
+**How to avoid:**
+When an entity is retrieved from an external system and persisted or modeled internally, it must ALWAYS include provenance metadata. Never store a bare external payload.
+**Required minimum fields:** `source`, `external_id`, `fetched_at`, `schema_version`.
+Always keep dual identity (`external_id` + internal ID). Prefer internal `fetched_at` clocks; store source clocks as `source_updated_at`.
+
+**Warning signs:**
+- Topology nodes in Memgraph lack a `source` or `fetched_at` property.
+- Plugins are generating the primary ID without retaining the original `external_id`.
+
+**Phase to address:**
+Plugin Interface Contract Definition Phase & Memgraph Schema Update Phase.
+
+---
+
+### Pitfall 3: Blocking I/O in the Ingestion Pipeline
+
+**What goes wrong:**
+Fetching topology from external providers takes too long, blocking the main Python thread and causing the rest of the application (e.g., the LangGraph agent) to stall or time out.
+
+**Why it happens:**
+Plugins are designed with synchronous HTTP requests (`requests` library) instead of async (`aiohttp`/`httpx`), and the core loop waits for the plugin to finish before proceeding.
+
+**How to avoid:**
+Design the plugin execution layer to be fully asynchronous. Use timeouts and circuit breakers for all provider API calls to ensure a slow external OTEL provider does not crash the agent.
+
+**Warning signs:**
+- Using synchronous `requests.get` inside the plugin's `fetch()` method.
+- No explicit timeout parameters in HTTP calls.
+
+**Phase to address:**
+Plugin Interface Contract Definition Phase.
+
+---
+
+### Pitfall 4: Implicit or Silent Failures on Provider Rate Limits
+
+**What goes wrong:**
+A plugin hits a rate limit on the provider side (e.g., DataDog API limits) and returns an empty topology graph or crashes, resulting in the core system wiping the existing internal graph.
+
+**Why it happens:**
+The plugin interface does not distinguish between "successfully fetched zero nodes" and "failed to fetch due to 429 Too Many Requests".
+
+**How to avoid:**
+Standardize error handling in the plugin contract. Plugins must raise explicit custom exceptions (e.g., `ProviderRateLimitError`, `ProviderAuthError`). The core ingestion engine must catch these and preserve the last known good state rather than wiping data.
+
+**Warning signs:**
+- Plugins catching generic `Exception` and returning `[]`.
+- No retry mechanisms or backoff logic for 429 status codes.
+
+**Phase to address:**
+Plugin Error Handling & Integration Phase.
+>>>>>>> Stashed changes
 
 ---
 
@@ -173,7 +261,10 @@ Between "human clicks Approve" and "executor actually runs the command," several
 
 ## Technical Debt Patterns
 
+Shortcuts that seem reasonable but create long-term problems.
+
 | Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
+<<<<<<< Updated upstream
 |----------|-------------------|-----------------|------------------|
 | Keep `threading.Thread` fire-and-forget for the webhook instead of converting to async + task-set | No event-loop/blocking-call rework needed | Can't share the process event loop with SSE cleanly; agent run isn't visible to `/events` without a second signalling path (e.g., have the thread itself issue `NOTIFY` via a short-lived sync connection) | Only as an explicit interim step within phase 10, not as the final phase-12 architecture |
 | In-memory pre-filter dedupe kept alongside the Postgres unique index | Avoids a DB round-trip for obvious millisecond-scale double-POSTs | Two sources of truth that can disagree post-restart | Acceptable as a *pure latency optimization* layered on top of the DB constraint, never as a replacement for it |
@@ -189,10 +280,29 @@ Between "human clicks Approve" and "executor actually runs the command," several
 | Postgres `LISTEN/NOTIFY` | One DB connection per SSE client | One process-wide LISTEN connection fanning out to per-client in-memory queues (Pitfall 7) |
 | `EventSource` (browser) | Assuming no events are missed across reconnects | `Last-Event-ID` + server-side sequence-numbered backfill from Postgres (Pitfall 8) |
 | React Flow | Feeding it a freshly-derived `nodes` array with unstable ids each render | Deterministic id per logical step, incremental layout only for new nodes (Pitfall 12) |
+=======
+|----------|-------------------|----------------|-----------------|
+| Hardcoding provider credentials | Fast local testing | Security risk; breaks when multiple environments or providers are used | Never |
+| Skipping pagination in plugins | Less complex plugin code | Fails silently when the service graph grows beyond the first page limit | Only for local demo with <50 nodes, but must be fixed before production |
+| Reusing external ID as internal ID | Saves one field in the DB | Collisions occur when multiple providers report on the same service or generic names | Never |
+
+## Integration Gotchas
+
+Common mistakes when connecting to external services.
+
+| Integration | Common Mistake | Correct Approach |
+|-------------|----------------|------------------|
+| SigNoz / ClickHouse | Using synchronous queries that lock the DB | Use async queries and configure timeouts. Implement connection pooling. |
+| Any OTEL Provider | Assuming timestamps are always UTC | Explicitly parse and normalize all timestamps to UTC during translation in the plugin. |
+| Any OTEL Provider | Blindly trusting the provider's definition of a "Service" | Define a clear heuristic for what constitutes a node (e.g., ignoring ephemeral sidecars or uninstrumented DBs). |
+>>>>>>> Stashed changes
 
 ## Performance Traps
 
+Patterns that work at small scale but fail as usage grows.
+
 | Trap | Symptoms | Prevention | When It Breaks |
+<<<<<<< Updated upstream
 |------|----------|------------|-----------------|
 | Per-SSE-client Postgres connection | Pool exhaustion errors correlate with open dashboard tabs, not request volume | Single shared LISTEN connection + in-memory fan-out (Pitfall 7) | Breaks with as few as (pool_size - normal_traffic_headroom) concurrent tabs — can be single digits |
 | Full-graph re-layout per event | UI jank increasing with incident duration/step count | Incremental layout, stable node ids (Pitfall 12) | Noticeable well before 50 steps; a long-running incident with many tool calls will hit this |
@@ -223,10 +333,36 @@ Between "human clicks Approve" and "executor actually runs the command," several
 - [ ] **Remediation execution:** Looks done once one allowlisted command runs successfully post-approval → verify a crafted service-name/label value containing shell metacharacters (`;`, `$()`, backticks) is rejected before argv construction, not merely "doesn't happen to break" in the happy path.
 - [ ] **Checkpointer setup:** Looks done in the dev environment where `.setup()` was run manually once → verify a fresh `docker compose up` from an empty Postgres volume succeeds without a manual step.
 - [ ] **Timestamps:** Looks done for normal alerts → verify a payload with `endsAt: "0001-01-01T00:00:00Z"` (Alertmanager's zero value) round-trips as `NULL`, not a year-1 date, in the persisted row.
+=======
+|------|----------|------------|----------------|
+| Fetching full graph on every tick | High bandwidth usage, API rate limits hit constantly | Implement incremental updates or differential syncing if supported, or increase poll intervals. | > 100 services |
+| N+1 queries during translation | Translation logic takes O(N) time for N nodes by making secondary API calls | Fetch all necessary metadata in bulk before beginning translation. | > 20 services |
+
+## Security Mistakes
+
+Domain-specific security issues beyond general web security.
+
+| Mistake | Risk | Prevention |
+|---------|------|------------|
+| Logging raw provider responses | Leaking API keys or sensitive telemetry data in logs | Sanitize or strip headers and sensitive fields before logging plugin responses. |
+| Running plugins with elevated DB access | A compromised plugin can drop the entire graph | Follow principle of least privilege: give plugins read-only external access, core layer handles DB writes. |
+
+## "Looks Done But Isn't" Checklist
+
+Things that appear complete but are missing critical pieces.
+
+- [ ] **Plugin Interface:** Often missing timeout definitions — verify all network calls have strict upper bounds.
+- [ ] **Provenance:** Often missing `fetched_at` or `schema_version` — verify Memgraph nodes contain exact provenance metadata.
+- [ ] **Error Propagation:** Often missing context — verify that a plugin failure correctly surfaces the provider's error message to the core engine without crashing.
+- [ ] **Data Translation:** Often missing empty-state handling — verify what happens if a provider returns zero nodes.
+>>>>>>> Stashed changes
 
 ## Recovery Strategies
 
+When pitfalls occur despite prevention, how to recover.
+
 | Pitfall | Recovery Cost | Recovery Steps |
+<<<<<<< Updated upstream
 |---------|----------------|-----------------|
 | Duplicate remediation execution already happened | HIGH | Manual incident review; add the conditional `UPDATE ... WHERE status='pending'` retroactively; backfill audit table with a "duplicate-detected" flag for the affected row |
 | In-memory dedupe race caused two agent runs for one incident | LOW | Add the unique index + `ON CONFLICT`; merge/close the duplicate row referencing the same fingerprint |
@@ -265,3 +401,31 @@ Between "human clicks Approve" and "executor actually runs the command," several
 ---
 *Pitfalls research for: incimin.io v1.7 Incident Dashboard milestone*
 *Researched: 2026-08-08*
+=======
+|---------|---------------|----------------|
+| ID Collision across providers | HIGH | Clear the affected graph segment, update the ID generation logic to include `source`, and trigger a full re-ingestion. |
+| Bad Schema Migration | MEDIUM | Revert to previous `schema_version`, ignore corrupted `external_id`s, re-fetch from providers. |
+| Rate Limit Blacklist | LOW | Implement exponential backoff, temporarily pause the specific plugin, alert the user. |
+
+## Pitfall-to-Phase Mapping
+
+How roadmap phases should address these pitfalls.
+
+| Pitfall | Prevention Phase | Prevention Verification |
+|---------|------------------|-------------------------|
+| Leaking Provider Concepts | Core Abstraction Design | Code review ensures core models have no provider-specific fields. |
+| Missing Provenance / Bare Payloads | Core Abstraction & DB Schema Update | Unit tests assert that any saved node contains `source` and `external_id`. |
+| Blocking I/O | Plugin Interface Contract | Integration tests mock a slow provider and ensure the main loop doesn't block. |
+| Silent Rate Limit Failures | Plugin Error Handling | Unit tests simulate 429 responses and verify the core graph is not wiped. |
+
+## Sources
+
+- incimin.io AGENTS.md (Entity Metadata Principle)
+- OpenTelemetry Plugin Architecture Best Practices
+- Python Async/Await networking guides
+- Graph Database ID resolution strategies
+
+---
+*Pitfalls research for: Plugin-Based Architecture for Service Topology Integration*
+*Researched: 2026-08-06*
+>>>>>>> Stashed changes

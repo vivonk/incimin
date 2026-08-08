@@ -1,22 +1,37 @@
 # Technology Stack
 
+<<<<<<< Updated upstream
 **Project:** incimin.io — AI SRE Agent, v1.7 Incident Dashboard milestone
 **Researched:** 2026-08-08
 
 **Scope note:** This file covers ONLY the new additions required for this milestone (Postgres access, LangGraph Postgres checkpointing, the React frontend, and SSE streaming). The existing validated stack (LangGraph 1.2.10, GQLAlchemy/Memgraph, ClickHouse, FastAPI, numpy<2.0 pin, tensorflow override, Langfuse, etc.) is unchanged and NOT re-litigated here — see `pyproject.toml` and prior research for that.
+=======
+**Domain:** Plugin Architecture & API Integration
+**Researched:** 2026-08-06
+**Confidence:** HIGH
+>>>>>>> Stashed changes
 
 ## Recommended Stack
 
 ### Postgres Driver (async, FastAPI-facing)
 
+<<<<<<< Updated upstream
 | Technology | Version | Purpose | Why |
 |------------|---------|---------|-----|
 | `psycopg[binary,pool]` | `>=3.2.0,<4` (currently resolves 3.3.4) | Async Postgres driver + connection pool | Official psycopg3 line is async-native (`psycopg.AsyncConnection`, `from psycopg_pool import AsyncConnectionPool`), ships prebuilt binary wheels (`binary` extra removes the need for `libpq`/build toolchain in Docker), and — critically — is the **same driver `langgraph-checkpoint-postgres` requires**. Using one driver avoids running two separate connection pools (asyncpg + psycopg) against the same Postgres instance. |
+=======
+| Technology | Version | Purpose | Why Recommended |
+|------------|---------|---------|-----------------|
+| `typing.Protocol` (Built-in) | Python 3.10+ | Plugin Interface Definition | Structural subtyping (duck typing) without forcing deep inheritance hierarchies. Keeps plugins decoupled from the core codebase. |
+| `importlib.metadata` (Built-in) | Python 3.10+ | Plugin Discovery via Entry Points | Standardized, performant way to load plugins distributed as independent packages (`pip install my-plugin`), avoiding fragile directory scanning. |
+| `httpx` | ^0.27.0 | Async HTTP Client | Needed to fetch topology data from SigNoz/DataDog APIs. It integrates natively with FastAPI's async event loop, unlike `requests`. |
+>>>>>>> Stashed changes
 
 **Async pool API shape** (psycopg 3.2+):
 ```python
 from psycopg_pool import AsyncConnectionPool
 
+<<<<<<< Updated upstream
 pool = AsyncConnectionPool(conninfo="postgresql://...", min_size=1, max_size=10, open=False)
 await pool.open()
 async with pool.connection() as conn:
@@ -39,9 +54,32 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
 async with AsyncPostgresSaver.from_conn_string(DATABASE_URL) as checkpointer:
     await checkpointer.setup()
+=======
+| Library | Version | Purpose | When to Use |
+|---------|---------|---------|-------------|
+| `tenacity` | ^9.0.0 | Retries & Resilience | Wrap `httpx` calls to provider APIs to handle rate limits, timeouts, and transient network errors gracefully. |
+| `pydantic` | ^2.8.0 | Data Normalization | Already in stack (via FastAPI), but specifically use it here to strictly validate and normalize external provider data (e.g. SigNoz API responses) into the core `TopologyGraph` schema. |
+
+### Development Tools
+
+| Tool | Purpose | Notes |
+|------|---------|-------|
+| `pytest-asyncio` | Async Testing | Essential for testing async HTTP clients and plugin resolution logic. |
+| `respx` | Mocking HTTP APIs | Use to mock external provider APIs (SigNoz, DataDog) during tests without making real network requests. Integrates natively with `httpx`. |
+
+## Installation
+
+```bash
+# Core & Supporting
+pip install httpx tenacity
+
+# Dev dependencies
+pip install pytest-asyncio respx
+>>>>>>> Stashed changes
 ```
 If constructing the connection/pool manually instead of `from_conn_string`, the connections passed to `AsyncPostgresSaver` **must** be opened with `autocommit=True` and `row_factory=dict_row` — `.setup()` silently fails to persist its DDL without `autocommit=True`. This is the single most common integration mistake reported for this package; flag it explicitly in the phase plan.
 
+<<<<<<< Updated upstream
 **Transitive addition:** `orjson>=3.11.5` (pulled in by `langgraph-checkpoint-postgres` for fast checkpoint (de)serialization). Pure-Rust binary wheel, no numpy/protobuf entanglement — safe.
 
 ### Frontend Toolchain (new — replaces Streamlit)
@@ -80,6 +118,16 @@ If constructing the connection/pool manually instead of `from_conn_string`, the 
 | TypeScript | `^5.9.3` | `latest` (7.0.2) | TS7's Go-native compiler has no stable programmatic API yet and `typescript-eslint` explicitly excludes it (`<6.1.0` peer range) — adopting it now breaks lint tooling. Revisit once the ecosystem catches up. |
 
 ## Compatibility Verification Against Existing Pins
+=======
+*(Note: `typing.Protocol` and `importlib.metadata` are built into standard Python 3.10+)*
+
+## Alternatives Considered
+
+| Recommended | Alternative | When to Use Alternative |
+|-------------|-------------|-------------------------|
+| `importlib.metadata` | `pluggy` | If plugins need to register complex lifecycle hooks (like pytest) or multiple plugins need to chain execution for a single operation. For simple "provider" abstractions, standard entry points are lighter. |
+| `typing.Protocol` | Abstract Base Classes (ABCs) | If you need to provide default implementations for some plugin methods, though mixins or composition are usually better. |
+>>>>>>> Stashed changes
 
 | Existing pin | New dependency | Result |
 |---|---|---|
@@ -143,6 +191,7 @@ npm install -D typescript@^5.9.3   # override whatever the scaffold pinned to la
 
 | Avoid | Why | Use Instead |
 |-------|-----|-------------|
+<<<<<<< Updated upstream
 | `asyncpg` | Would create a second Postgres driver/pool alongside the one `langgraph-checkpoint-postgres` forces (psycopg3); doubles connection-pool surface for no gain | `psycopg[binary,pool]` |
 | `dagre` (plain npm package, unscoped) | Unmaintained, frozen at `0.8.5` | `@dagrejs/dagre` |
 | `typescript@latest` / unpinned `typescript` | Resolves to 7.0.2, which `typescript-eslint` 8.66.0 explicitly rejects (`<6.1.0` peer range) and which ships without a stable compiler API yet | `typescript@^5.9.3` |
@@ -158,3 +207,35 @@ npm install -D typescript@^5.9.3   # override whatever the scaffold pinned to la
 - WebSearch: LangChain reference docs (`reference.langchain.com/python/langgraph.checkpoint.postgres/...`) confirming `AsyncPostgresSaver.setup()` semantics, table names, and the `autocommit=True`/`row_factory=dict_row` requirement for manually-constructed connections — MEDIUM-HIGH confidence (official docs, corroborated by community blog posts describing the same failure mode)
 - WebSearch: React Flow / xyflow docs (`reactflow.dev/learn/layouting/layouting`, `reactflow.dev/examples/layout/dagre`, `reactflow.dev/examples/layout/elkjs`) confirming xyflow ships no bundled layout engine and its own comparative guidance on dagre vs elkjs — HIGH confidence (official docs)
 - WebSearch: TypeScript 7.0 GA coverage (InfoQ, "TypeScript 7.0 Is GA" — July 2026) corroborating the native Go-compiler rewrite and the missing stable programmatic API in 7.0 — MEDIUM confidence (secondary press coverage, cross-checked against the npm `dist-tags` showing `next: 7.1.0-dev...` which corroborates 7.1 as the still-unreleased version that would add the API back)
+=======
+| `requests` | It blocks the thread and will stall FastAPI's async event loop during slow API calls to observability providers. | `httpx` |
+| Directory Scanning (e.g., `os.listdir` + `importlib.util.spec_from_file_location`) | Highly fragile, breaks in containerized/packaged environments, and hard to manage dependencies for plugins. | `importlib.metadata` (Entry points) |
+| `stevedore` / `yapsy` | Too heavy, outdated, or unnecessarily complex for this scale. | Built-in standard library tools (`importlib.metadata`). |
+
+## Stack Patterns by Variant
+
+**If the plugin needs to run background polling (e.g., streaming topology updates):**
+- Use FastAPI's background tasks or standard `asyncio.create_task` combined with `tenacity` for resilient polling.
+- Because blocking the main request thread to update the Memgraph topology is anti-pattern.
+
+**If the provider (like SigNoz) uses GraphQL instead of REST:**
+- Use `httpx` with standard JSON payloads or `gql` (async client).
+- Because `httpx` is capable of handling standard POST requests for GraphQL endpoints without needing a heavy specialized library for simple queries.
+
+## Version Compatibility
+
+| Package A | Compatible With | Notes |
+|-----------|-----------------|-------|
+| `httpx@^0.27.0` | `respx@^0.21.0` | Ensure `respx` matches the `httpx` major version to avoid breaking mock interceptions in tests. |
+
+## Sources
+
+- [Python Official Docs](https://docs.python.org/3/library/importlib.metadata.html) — `importlib.metadata` and Entry Points
+- [Python Official Docs](https://docs.python.org/3/library/typing.html#typing.Protocol) — Structural subtyping with `Protocol`
+- [HTTPX Documentation](https://www.python-httpx.org/) — Async HTTP standards
+- [Pluggy GitHub](https://github.com/pytest-dev/pluggy) — Considered for complex hook management
+
+---
+*Stack research for: Plugin-based Architecture for Service Topology Integration*
+*Researched: 2026-08-06*
+>>>>>>> Stashed changes
