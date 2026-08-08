@@ -112,7 +112,7 @@ export default function DetailPanel({ incident }: { incident: Incident }) {
                     .map((h) => (
                       <tr key={h.id} className={h.status === 'refuted' ? 'refuted' : ''}>
                         <td>
-                          <div className="bar">
+                          <div className="posterior">
                             <div style={{ width: `${Math.round(h.posterior * 100)}%` }} />
                             <span>{h.posterior.toFixed(2)}</span>
                           </div>
