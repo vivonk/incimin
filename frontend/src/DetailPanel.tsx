@@ -76,10 +76,7 @@ function Gate({
             {p.best_guess && (
               <>
                 <span>Best guess</span>
-                <strong>
-                  {p.best_guess.statement}{' '}
-                  <span className="dim">({p.best_guess.posterior.toFixed(2)})</span>
-                </strong>
+                <strong>{p.best_guess.statement}</strong>
               </>
             )}
             <span>Failed checks</span>
@@ -194,11 +191,13 @@ export default function DetailPanel({ incident }: { incident: Incident }) {
           {hypotheses.length > 0 && (
             <>
               <h3>Hypotheses considered</h3>
+              {/* Still ordered by the agent's ranking — the leading explanation is
+                  first — but the underlying number is not surfaced. */}
               <table className="inner">
                 <thead>
                   <tr>
-                    <th>Posterior</th>
-                    <th>Kind</th>
+                    <th>Rank</th>
+                    <th>Explanation</th>
                     <th>Service</th>
                     <th>Status</th>
                   </tr>
@@ -206,15 +205,10 @@ export default function DetailPanel({ incident }: { incident: Incident }) {
                 <tbody>
                   {[...hypotheses]
                     .sort((a, b) => b.posterior - a.posterior)
-                    .map((h) => (
+                    .map((h, idx) => (
                       <tr key={h.id} className={h.status === 'refuted' ? 'refuted' : ''}>
-                        <td>
-                          <div className="posterior">
-                            <div style={{ width: `${Math.round(h.posterior * 100)}%` }} />
-                            <span>{h.posterior.toFixed(2)}</span>
-                          </div>
-                        </td>
-                        <td className="mono">{h.kind}</td>
+                        <td className="dim">{idx === 0 ? 'Leading' : idx + 1}</td>
+                        <td className="mono">{h.kind.replace(/_/g, ' ')}</td>
                         <td className="mono">{h.service}</td>
                         <td>{h.status}</td>
                       </tr>

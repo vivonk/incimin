@@ -493,9 +493,13 @@ def propose_remediation_node(state: IncidentState) -> dict:
     proposal = remediation.propose("restart_service", winner.subject_service)
     proposal["hypothesis"] = winner.statement
     proposal["posterior"] = round(winner.posterior, 4)
+    # Rationale is written for the person about to approve a restart, so it states
+    # the leading explanation in words. The posterior stays on the proposal for the
+    # audit record but is deliberately not phrased into the sentence — a bare
+    # probability invites arguing with the number instead of the reasoning.
     proposal["rationale"] = (
-        f"{winner.subject_service} leads at posterior {winner.posterior:.2f} "
-        f"({winner.kind}). {winner.statement}"
+        f"Leading explanation is {winner.kind.replace('_', ' ')} in "
+        f"{winner.subject_service}. {winner.statement}"
     )
     log.info(
         "proposing %s for %s (executable=%s)",

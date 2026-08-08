@@ -93,7 +93,11 @@ def test_run_pauses_before_remediation_with_a_readable_proposal(running, no_exec
     proposal = payload["proposal"]
     assert proposal["container"] == "payment"
     assert proposal["argv"] == ["docker", "restart", "payment"]
-    assert "posterior" in proposal["rationale"] or "0.9" in proposal["rationale"]
+    # Rationale is phrased for the approver, not the internal score: no bare
+    # probability, but the leading explanation stated in words.
+    assert "payment" in proposal["rationale"]
+    assert "dependency failure" in proposal["rationale"]
+    assert "0.9" not in proposal["rationale"]
 
 
 def test_approval_executes_exactly_once(running, no_exec):
