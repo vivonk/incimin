@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from 'react'
+import { Fragment, useCallback, useEffect, useState } from 'react'
 import { listIncidents } from './api'
+import DetailPanel from './DetailPanel'
 import type { Incident, IncidentStatus } from './types'
 import './App.css'
 
@@ -30,6 +31,7 @@ export default function App() {
   const [severity, setSeverity] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [selected, setSelected] = useState<string | null>(null)
 
   const refresh = useCallback(async () => {
     setLoading(true)
@@ -88,18 +90,30 @@ export default function App() {
         </thead>
         <tbody>
           {incidents.map((i) => (
-            <tr key={i.id}>
-              <td>
-                <span className={`pill s-${i.status}`}>{i.status.replace(/_/g, ' ')}</span>
-                {i.current_step && <span className="step">{i.current_step}</span>}
-              </td>
-              <td>
-                <span className={`sev sev-${i.severity ?? 'none'}`}>{i.severity ?? '—'}</span>
-              </td>
-              <td className="mono">{i.service}</td>
-              <td>{i.alertname}</td>
-              <td className="dim">{firedAt(i.fired_at)}</td>
-            </tr>
+            <Fragment key={i.id}>
+              <tr
+                className={selected === i.id ? 'row sel' : 'row'}
+                onClick={() => setSelected(selected === i.id ? null : i.id)}
+              >
+                <td>
+                  <span className={`pill s-${i.status}`}>{i.status.replace(/_/g, ' ')}</span>
+                  {i.current_step && <span className="step">{i.current_step}</span>}
+                </td>
+                <td>
+                  <span className={`sev sev-${i.severity ?? 'none'}`}>{i.severity ?? '—'}</span>
+                </td>
+                <td className="mono">{i.service}</td>
+                <td>{i.alertname}</td>
+                <td className="dim">{firedAt(i.fired_at)}</td>
+              </tr>
+              {selected === i.id && (
+                <tr className="detail-row">
+                  <td colSpan={5}>
+                    <DetailPanel incident={i} />
+                  </td>
+                </tr>
+              )}
+            </Fragment>
           ))}
           {incidents.length === 0 && !error && (
             <tr>

@@ -34,6 +34,44 @@ export interface Incident {
   raw: Record<string, unknown>
 }
 
+// Shapes the kernel writes into agent_steps.output via runner._summarize().
+// Optional throughout: which keys a step carries depends on which node produced it.
+
+export interface HypothesisView {
+  id: string
+  kind: string
+  service: string
+  posterior: number
+  status: 'open' | 'refuted' | 'confirmed'
+}
+
+export interface VerificationView {
+  passed: boolean
+  failed_checks: string[]
+  detail: string
+}
+
+export interface BudgetView {
+  max_rounds: number
+  rounds_used: number
+  exit_reason: string
+}
+
+export interface StepOutput {
+  hypotheses?: HypothesisView[]
+  verification_result?: VerificationView
+  budget?: BudgetView
+  candidate_services?: string[]
+  evidence_count?: number
+  summary?: string
+  round_index?: number
+  synthesis?: {
+    root_cause_service: string | null
+    confidence: string | null
+    evidence_refs: string[]
+  }
+}
+
 export interface AgentStep {
   id: number
   incident_id: string
@@ -43,7 +81,7 @@ export interface AgentStep {
   name: string
   status: string
   input: Record<string, unknown> | null
-  output: Record<string, unknown> | null
+  output: StepOutput | null
   started_at: string
   ended_at: string | null
 }

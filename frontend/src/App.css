@@ -99,3 +99,99 @@ tbody tr:hover { background: var(--panel); }
 .dim { color: var(--dim); }
 .empty { text-align: center; color: var(--dim); padding: 32px; }
 .error { color: var(--crit); background: rgba(240, 97, 109, 0.1); padding: 10px 12px; border-radius: 6px; }
+
+/* -- detail panel ------------------------------------------------------ */
+
+.row { cursor: pointer; }
+.row.sel { background: var(--panel); }
+.detail-row td { padding: 0; background: #12151b; }
+
+.detail { border-top: 1px solid var(--line); }
+
+.tabs { display: flex; gap: 2px; padding: 8px 12px 0; border-bottom: 1px solid var(--line); }
+
+.tab {
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  padding: 8px 14px;
+  color: var(--dim);
+  font: inherit;
+  cursor: pointer;
+}
+.tab:hover { color: var(--text); }
+.tab.on { color: var(--text); border-bottom-color: var(--info); }
+
+.pad { padding: 16px 20px 22px; }
+
+.detail h3 {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--dim);
+  margin: 20px 0 8px;
+}
+
+.kv {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 16px;
+  align-items: baseline;
+}
+.kv span { color: var(--dim); font-size: 13px; }
+
+table.inner { margin-top: 4px; }
+table.inner th { padding: 6px 10px; }
+table.inner td { padding: 7px 10px; border-bottom: 1px solid #1d222b; }
+tr.refuted { opacity: 0.5; text-decoration: line-through; }
+
+.bar { position: relative; width: 120px; height: 18px; background: #1d222b; border-radius: 3px; }
+.bar > div { position: absolute; inset: 0 auto 0 0; background: rgba(74, 157, 224, 0.45); border-radius: 3px; }
+.bar > span { position: relative; padding-left: 6px; font-size: 12px; font-variant-numeric: tabular-nums; }
+
+ul.plain { list-style: none; margin: 0; padding: 0; }
+ul.plain li { padding: 4px 0; border-bottom: 1px solid #1d222b; }
+
+.answer {
+  background: #12151b;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 12px;
+  margin: 0;
+  max-height: 340px;
+  overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  color: #c8cedb;
+}
+
+.ok  { color: var(--ok); font-weight: 600; }
+.bad { color: var(--crit); font-weight: 600; }
+
+/* -- step graph -------------------------------------------------------- */
+
+.graph { height: 460px; border-top: 1px solid var(--line); }
+
+.gnode {
+  width: 190px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--dim);
+  border-radius: 5px;
+  background: var(--panel);
+  font-size: 12px;
+}
+.gnode-label { font-weight: 600; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.gnode-sub { color: var(--dim); font-size: 11px; margin-top: 1px; }
+
+.k-node        { border-left-color: var(--info); }
+.k-tool_result { border-left-color: var(--ok); }
+.k-tool_call   { border-left-color: var(--warn); }
+.k-gate        { border-left-color: var(--wait); }
+.st-error      { border-left-color: var(--crit); }
+
+.react-flow__handle { opacity: 0; }
+.react-flow__edge-path { stroke: #303845; }
