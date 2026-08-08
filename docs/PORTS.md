@@ -12,8 +12,6 @@ Any port not listed here must remain unpublished (container-network access only)
 | 3301 | 127.0.0.1 | signoz-frontend | signoz | SigNoz web UI | D-04 — overrides Foundry default 8080 |
 | 4317 | 127.0.0.1 | signoz-otel-collector | signoz | OTLP gRPC | — |
 | 4318 | 127.0.0.1 | signoz-otel-collector | signoz | OTLP HTTP | — |
-| 6333 | 127.0.0.1 | qdrant | core | Qdrant REST API | — |
-| 6334 | 127.0.0.1 | qdrant | core | Qdrant gRPC | — |
 | 7444 | 127.0.0.1 | memgraph | core | Memgraph monitoring/WS | — |
 | 7687 | 127.0.0.1 | memgraph | core | Memgraph Bolt | — |
 | 8090 | 127.0.0.1 | otel-demo-frontend-proxy | otel-demo | Envoy HTTP frontend | D-04 — ENVOY_PORT=8090, avoids 8080 collision |

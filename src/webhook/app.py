@@ -4,7 +4,7 @@
     GET  /health            liveness
 
 An incoming alert is parsed into an `AlertContext` (message + metadata) and handed to the
-LangGraph meta-agent in `src.agent.graph`, which delegates to the topology / telemetry / knowledge
+LangGraph meta-agent in `src.agent.graph`, which delegates to the topology / telemetry
 sub-agents and returns a verified root cause.
 
 Three deliberate choices:

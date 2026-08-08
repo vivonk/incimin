@@ -1,6 +1,6 @@
 # incimin.io — AI SRE Agent
 
-Autonomous AI SRE agent that performs real-time, deterministic root-cause analysis during infrastructure incidents. Traverses the live service graph (Memgraph), queries correlated telemetry (SigNoz/ClickHouse), and retrieves runbooks (Qdrant) to deliver root cause and remediation before a human opens a dashboard.
+Autonomous AI SRE agent that performs real-time, deterministic root-cause analysis during infrastructure incidents. Traverses the live service graph (Memgraph) and queries correlated telemetry (SigNoz/ClickHouse) to deliver a root cause before a human opens a dashboard.
 
 ## Prerequisites
 
@@ -24,7 +24,7 @@ docker network create incimin || true
 docker compose up -d
 ```
 
-This starts: Memgraph + MAGE, Qdrant, SigNoz (OTel Collector + ClickHouse + UI), and the OTel Astronomy Shop (14-service demo app).
+This starts: Memgraph + MAGE, SigNoz (OTel Collector + ClickHouse + UI), and the OTel Astronomy Shop (14-service demo app).
 
 ## Verify the stack
 
@@ -32,7 +32,7 @@ This starts: Memgraph + MAGE, Qdrant, SigNoz (OTel Collector + ClickHouse + UI),
 uv run python scripts/verify_stack.py
 ```
 
-All 14 checks should show `PASS`.
+All 13 checks should show `PASS`.
 
 ## Running the production system
 
@@ -85,7 +85,6 @@ uv run pytest
 |---------|------|-----|
 | Memgraph Bolt | 7687 | `bolt://localhost:7687` |
 | Memgraph Lab (UI) | 3000 | http://localhost:3000 |
-| Qdrant | 6333 | http://localhost:6333 |
 | SigNoz UI | 3301 | http://localhost:3301 |
 | ClickHouse HTTP | 8123 | http://localhost:8123 |
 | OTel Collector (gRPC) | 4317 | — |
@@ -116,11 +115,11 @@ src/production/
     manager.py               # TopologyManager plugin registry
     plugins/signoz.py        # SigNoz topology provider
 scripts/
-  verify_stack.py            # 14-check infrastructure gate
-  init_qdrant.py             # Seed runbooks into Qdrant
+  verify_stack.py            # 13-check infrastructure gate
+  init_memgraph.py           # Seed the service topology into Memgraph
   check_tele.py              # Telemetry query smoke test
 docker/
-  compose.core.yaml          # Memgraph + Qdrant
+  compose.core.yaml          # Memgraph + Memgraph Lab
   compose.signoz.yaml        # SigNoz stack
   compose.otel-demo.yaml     # OTel Astronomy Shop
 ```

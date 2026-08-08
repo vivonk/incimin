@@ -9,7 +9,6 @@ from langchain_core.tools import InjectedToolCallId, tool
 from langgraph.prebuilt import InjectedState
 from langgraph.types import Command
 
-from src.agent.subagents.knowledge import run_knowledge_subagent
 from src.agent.subagents.telemetry import run_telemetry_subagent
 from src.agent.subagents.topology import run_topology_subagent
 
@@ -43,22 +42,6 @@ def telemetry_tool(
     # graph state (i.e. after topology_tool has run) — default to [] otherwise rather than
     # raising, since run_telemetry_subagent already handles an empty candidate list.
     result = run_telemetry_subagent(candidate_services or [], window_mins=window_mins)
-    return Command(
-        update={
-            "evidence": result.evidence,
-            "messages": [ToolMessage(content=result.summary, tool_call_id=tool_call_id)],
-        }
-    )
-
-
-@tool
-def knowledge_tool(
-    query: str,
-    tool_call_id: Annotated[str, InjectedToolCallId],
-) -> Command:
-    """Retriever sub-agent: semantic-searches the runbook knowledge base in Qdrant. Call this
-    last, once you know which service and symptom to search for."""
-    result = run_knowledge_subagent(query)
     return Command(
         update={
             "evidence": result.evidence,

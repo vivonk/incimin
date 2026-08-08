@@ -11,7 +11,6 @@ import re
 from pathlib import Path
 
 from gqlalchemy import Memgraph
-from qdrant_client import QdrantClient
 import clickhouse_connect
 
 def parse_ports():
@@ -120,12 +119,6 @@ def check_graph_03():
     if results[0]['count'] == 0:
         raise Exception("PersistenceProbe node not found")
 
-def check_vec_01():
-    client = QdrantClient("http://127.0.0.1:6333", timeout=5.0)
-    collections = client.get_collections()
-    if collections is None:
-        raise Exception("Failed to list collections")
-
 def check_tele_01():
     logs_table, _, _ = parse_clickhouse_schema()
     client = clickhouse_connect.get_client(host='127.0.0.1', port=8123, username='default', password='')
@@ -227,7 +220,6 @@ CHECKS = [
     ("GRAPH-01", check_graph_01),
     ("GRAPH-02", check_graph_02),
     ("GRAPH-03", check_graph_03),
-    ("VEC-01", check_vec_01),
     ("TELE-01", check_tele_01),
     ("TELE-02", check_tele_02),
     ("TELE-03", check_tele_03),

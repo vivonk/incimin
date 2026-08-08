@@ -109,7 +109,7 @@ if prompt := st.chat_input("Ask the AI SRE Agent..."):
                         with st.status("Coordinator: draft synthesis", state="complete"):
                             st.write(f"root_cause_service: {synthesis.root_cause_service}")
                             st.write(f"evidence_refs: {synthesis.evidence_refs}")
-                            st.write(f"remediation_runbook_id: {synthesis.remediation_runbook_id}")
+                            st.write(f"evidence_refs: {synthesis.evidence_refs}")
                             st.write(f"confidence: {synthesis.confidence}")
                 elif node_name == "verifier":
                     vr = state_update.get("verification_result")

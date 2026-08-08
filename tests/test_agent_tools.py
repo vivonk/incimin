@@ -11,10 +11,9 @@ from langgraph.graph import END, StateGraph
 from langgraph.prebuilt import ToolNode
 
 from src.agent.state import SREAgentState
-from src.agent.subagents.knowledge import KnowledgeResult
 from src.agent.subagents.telemetry import TelemetryResult
 from src.agent.subagents.topology import TopologyResult
-from src.agent.tools import knowledge_tool, telemetry_tool, topology_tool
+from src.agent.tools import telemetry_tool, topology_tool
 
 
 def tool_call(name, args, call_id="call-1"):
@@ -73,22 +72,6 @@ class TestTelemetryTool(unittest.TestCase):
         invoke_single_tool(telemetry_tool, {"messages": [tool_call("telemetry_tool", {})]})
 
         mock_run.assert_called_once_with([], window_mins=30)
-
-
-class TestKnowledgeTool(unittest.TestCase):
-    @patch("src.agent.tools.run_knowledge_subagent")
-    def test_returns_evidence_command(self, mock_run):
-        mock_run.return_value = KnowledgeResult(
-            evidence=[{"id": "knowledge-0", "source": "knowledge", "service": "paymentservice", "summary": "paymentservice_crash.md", "raw": {}, "timestamp": None}],
-            summary="Top match: paymentservice_crash.md (score=0.90).",
-        )
-
-        result = invoke_single_tool(
-            knowledge_tool, {"messages": [tool_call("knowledge_tool", {"query": "payment crash"})]}
-        )
-
-        mock_run.assert_called_once_with("payment crash")
-        self.assertEqual(len(result["evidence"]), 1)
 
 
 if __name__ == "__main__":

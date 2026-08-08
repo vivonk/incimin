@@ -16,7 +16,6 @@ class TestVerifier(unittest.TestCase):
         self.evidence = [
             make_evidence("topology-0", "topology", "paymentservice"),
             make_evidence("telemetry-err-0", "telemetry", "paymentservice", timestamp=NOW_NS),
-            make_evidence("knowledge-0", "knowledge", "paymentservice"),
         ]
         self.candidate_services = ["paymentservice"]
 
@@ -24,7 +23,6 @@ class TestVerifier(unittest.TestCase):
         synthesis = Synthesis(
             root_cause_service="paymentservice",
             evidence_refs=["topology-0", "telemetry-err-0"],
-            remediation_runbook_id="knowledge-0",
             confidence="high",
         )
         result = verify(self.evidence, self.candidate_services, synthesis)
@@ -55,16 +53,6 @@ class TestVerifier(unittest.TestCase):
         self.assertFalse(result["passed"])
         self.assertIn("evidence_grounding", result["failed_checks"])
 
-    def test_fails_when_remediation_runbook_id_not_found(self):
-        synthesis = Synthesis(
-            root_cause_service="paymentservice",
-            evidence_refs=["topology-0"],
-            remediation_runbook_id="knowledge-99",
-        )
-        result = verify(self.evidence, self.candidate_services, synthesis)
-        self.assertFalse(result["passed"])
-        self.assertIn("evidence_grounding", result["failed_checks"])
-
     def test_fails_when_topology_disagrees(self):
         evidence = self.evidence + [make_evidence("telemetry-cart", "telemetry", "cartservice", NOW_NS)]
         synthesis = Synthesis(root_cause_service="cartservice", evidence_refs=["telemetry-cart"])
@@ -74,7 +62,7 @@ class TestVerifier(unittest.TestCase):
 
     def test_fails_when_telemetry_disagrees(self):
         synthesis = Synthesis(root_cause_service="paymentservice", evidence_refs=["topology-0"])
-        result = verify([self.evidence[0], self.evidence[2]], self.candidate_services, synthesis)
+        result = verify([self.evidence[0]], self.candidate_services, synthesis)
         self.assertFalse(result["passed"])
         self.assertIn("cross_modal_consistency", result["failed_checks"])
 

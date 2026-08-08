@@ -1,27 +1,26 @@
 # Hackathon Starting Checkpoint
 
-**Project:** incimin.io — AI SRE agent. Alert fires → agent traverses the live service graph, correlates telemetry, retrieves the runbook, returns root cause + remediation.
+**Project:** incimin.io — AI SRE agent. Alert fires → agent traverses the live service graph, correlates telemetry, returns root cause with supporting evidence.
 
 **State as of 2026-08-08:** milestones v1.5 and v1.6 shipped (phases 1–9 complete). No milestone in progress.
 
 ## Infrastructure (running via `docker compose up -d`)
 
-- `compose.yaml` includes three stacks: `compose.core.yaml` (Memgraph+MAGE, Memgraph Lab, Qdrant), `compose.signoz.yaml` (SigNoz + OTel Collector + ClickHouse, deployed via foundryctl `casting.yaml`), `compose.otel-demo.yaml` (OTel Astronomy Shop demo app).
-- `scripts/verify_stack.py` — 14-check infrastructure gate.
-- `scripts/verify_data_planes.py` — one-command check across topology + telemetry + knowledge.
+- `compose.yaml` includes three stacks: `compose.core.yaml` (Memgraph+MAGE, Memgraph Lab), `compose.signoz.yaml` (SigNoz + OTel Collector + ClickHouse, deployed via foundryctl `casting.yaml`), `compose.otel-demo.yaml` (OTel Astronomy Shop demo app).
+- `scripts/verify_stack.py` — 13-check infrastructure gate.
+- `scripts/verify_data_planes.py` — one-command check across topology + telemetry.
 
-## Three data planes — all seeded and verified
+## Two data planes — both seeded and verified
 
 | Plane | Store | Built |
 |---|---|---|
 | Topology | Memgraph | `scripts/init_memgraph.py`, `scripts/check_topo.py` |
 | Telemetry | ClickHouse (`signoz_logs.distributed_logs_v2`) | `scripts/check_tele.py` |
-| Knowledge | Qdrant + fastembed (bge-small-en-v1.5) | `scripts/init_qdrant.py`, `scripts/check_know.py`, 3 runbooks in `docs/runbooks/` |
 
 ## Agent (`src/agent/`)
 
 - **Multi-agent LangGraph meta-agent** (`graph.py`): coordinator LLM ↔ tools loop → synthesize (structured output) → deterministic verifier → finalize / graceful_exit.
-- **Three sub-agents** (`subagents/`): `topology.py` (BFS over Memgraph → candidate services), `telemetry.py` (ClickHouse error evidence), `knowledge.py` (Qdrant runbook search). Wrapped as LangGraph tools returning `Command` state updates (`tools.py`).
+- **Two sub-agents** (`subagents/`): `topology.py` (BFS over Memgraph → candidate services), `telemetry.py` (ClickHouse error evidence). Wrapped as LangGraph tools returning `Command` state updates (`tools.py`).
 - **Verifier** (`subagents/verifier.py`): pure deterministic Layer-1 gates — evidence grounding, cross-modal consistency, temporal ordering. Layer 2 (LLM judge) intentionally not implemented.
 - **State schema** (`state.py`): `Evidence`, `Synthesis`, `VerificationResult`, `SREAgentState`.
 - **Alternate flow** (`diagnosis.py`): alert → MCP `get_service_topology` + `get_system_events` → LLM synthesis, fail-closed prompt.
@@ -44,7 +43,8 @@
 
 ## Tests
 
-- 65 tests across 10 files (`tests/`): agent tools, graph, subagents, verifier, webhook, topology, plugin, signoz plugin, llm provider, ui. Run with `uv run pytest`.
+- 66 tests across 10 files (`tests/`): agent tools, graph, subagents, verifier, webhook, topology, plugin, signoz plugin, llm provider, ui. Run with `uv run pytest`.
+- 65 pass; `tests/test_signoz_plugin.py::test_signoz_plugin_fetch` fails (pre-existing — the plugin skips every fixture entity as "missing parent/child").
 
 ## Simulation / demo tooling
 
@@ -55,5 +55,6 @@
 ## Not built yet
 
 - No milestone/roadmap defined beyond v1.6 — next phase is open.
+- **No knowledge/runbook plane.** Qdrant, fastembed, the retriever sub-agent, and `docs/runbooks/` were removed on 2026-08-08 — the agent names a root cause and cites evidence, but does not recommend remediation.
 - Verifier Layer 2 (LLM judgment) deferred.
 - No auth, multi-session, or production checkpointer (still `MemorySaver`).
