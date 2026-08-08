@@ -17,6 +17,7 @@ Any port not listed here must remain unpublished (container-network access only)
 | 8090 | 127.0.0.1 | otel-demo-frontend-proxy | otel-demo | Envoy HTTP frontend | D-04 — ENVOY_PORT=8090, avoids 8080 collision |
 | 5433 | 127.0.0.1 | postgres | core | Application state: incidents, agent steps, approvals, LangGraph checkpoints | v1.7 — 5432 left free for a developer's local Postgres |
 | 8088 | 127.0.0.1 | incident-api | agent | FastAPI: SigNoz webhook + incident REST API | v1.7 — replaces the retired Starlette receiver; 8080 is reserved-unbound |
+| 8000 | 127.0.0.1 | production-mcp | agent | FastAPI/ASGI: `get_service_topology` / `get_system_events` MCP tools over SSE (`src/production/main.py`) | v1.7 — the kernel's hypothesis-generation step calls this over the real MCP protocol; must be running for that grounding to have anything to call. Was previously reachable only via an external ngrok tunnel by default — `src/agent/mcp_client.py`'s default now points here instead. |
 | 8123 | 127.0.0.1 | clickhouse | signoz | ClickHouse HTTP API | — |
 | 8501 | 127.0.0.1 | agent | agent | Streamlit UI | — |
 | 5173 | 127.0.0.1 | dashboard-dev | agent | Vite dev server for the incident dashboard (dev only; prod is served by :8088) | v1.7 — 3000 is taken by memgraph-lab |

@@ -376,10 +376,26 @@ ul.plain li:last-child { border-bottom: 0; }
 
 /* ── step graph ─────────────────────────────────────────────────────── */
 
-.graph { height: 460px; border-top: 1px solid var(--line); }
+.graphwrap { border-top: 1px solid var(--line); }
+
+.glegend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 12px;
+  color: var(--dim);
+}
+.glegend-item { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.glegend-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
+.glegend-arrow { color: var(--faint); margin-left: 6px; }
+
+.graph { height: 420px; }
 
 .gnode {
-  width: 190px;
+  width: 200px;
   padding: 7px 10px;
   border: 1px solid var(--line);
   border-left: 3px solid var(--faint);
@@ -387,14 +403,13 @@ ul.plain li:last-child { border-bottom: 0; }
   background: var(--panel);
   font-size: 12px;
 }
-.gnode-label { font-weight: 600; font-family: ui-monospace, Menlo, monospace; }
+.gnode-label { font-weight: 600; }
 .gnode-sub { color: var(--faint); font-size: 11px; margin-top: 1px; }
 
-.k-node        { border-left-color: var(--accent); }
-.k-tool_result { border-left-color: var(--ok); }
-.k-tool_call   { border-left-color: var(--warn); }
-.k-gate        { border-left-color: var(--wait); }
-.st-error      { border-left-color: var(--crit); }
+/* Stage color is set inline per node (STAGE_VAR in StepGraph.tsx) so it stays
+   driven by one source of truth instead of duplicated as CSS classes; only the
+   status-based override lives here. */
+.st-error { border-left-color: var(--crit) !important; }
 
 .react-flow__handle { opacity: 0; }
 .react-flow__edge-path { stroke: #2e2e38; }

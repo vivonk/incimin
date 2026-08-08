@@ -26,6 +26,7 @@ from langgraph.graph import END, StateGraph
 from langgraph.types import Send, interrupt
 
 from src.agent.kernel import beliefs as belief_math
+from src.agent.kernel import mcp_tools
 from src.agent.kernel.budget import DEFAULT_TAU, size_budget, stop_reason
 from src.agent.kernel.selection import select_probes
 from src.agent.kernel.state import (
@@ -98,11 +99,18 @@ def ground_node(state: IncidentState) -> dict:
 
 
 def seed_node(state: IncidentState) -> dict:
-    """Three-tier hypothesis generation: playbook, then topology, then the model.
+    """Hypothesis generation: playbook, topology, MCP grounding, then the model.
 
-    The model only runs if the deterministic tiers underfill. When a team playbook matches,
-    seeding never touches an LLM at all — which is precisely why the configurable layer makes
-    the system *more* deterministic rather than less.
+    MCP grounding — calling `get_service_topology` and `get_system_events` on the
+    `incimin-sre` server — runs unconditionally (network permitting), not as a
+    last resort like the LLM tier. See `mcp_tools.gather` for why: a real recent
+    deploy is grounds for a hypothesis in its own right, not just corroboration
+    for one another tier already guessed. The LLM tier still fires only if the
+    deterministic tiers, MCP included, underfill.
+
+    Both are skipped under `deterministic_mode()` — network calls and model calls
+    are exactly the non-determinism the golden path and the kernel tests must not
+    have.
     """
     alert = state.get("alert") or {}
     candidates = list(state.get("candidate_services") or [])
@@ -110,6 +118,14 @@ def seed_node(state: IncidentState) -> dict:
     hypotheses = _seed_from_playbooks(state) or []
     if len(hypotheses) < MIN_HYPOTHESES:
         hypotheses += _seed_from_topology(candidates, exclude={h.subject_service for h in hypotheses})
+
+    mcp_evidence: list[Evidence] = []
+    mcp_probe_log: list[ProbeRun] = []
+    if not deterministic_mode():
+        mcp_evidence, mcp_hypotheses, mcp_probe_log = mcp_tools.gather(alert, candidates)
+        seen = {(h.kind, h.subject_service) for h in hypotheses}
+        hypotheses += [h for h in mcp_hypotheses if (h.kind, h.subject_service) not in seen]
+
     if len(hypotheses) < MIN_HYPOTHESES and not deterministic_mode():
         hypotheses += _seed_from_llm(alert, candidates, existing=hypotheses)
 
@@ -118,6 +134,8 @@ def seed_node(state: IncidentState) -> dict:
             "hypotheses": [],
             "budget": Budget(max_rounds=0, exit_reason="no_hypotheses"),
             "round_index": 0,
+            "evidence": mcp_evidence,
+            "probe_log": mcp_probe_log,
         }
 
     hypotheses = belief_math.seed_posteriors(hypotheses)
@@ -128,7 +146,13 @@ def seed_node(state: IncidentState) -> dict:
         budget.max_rounds,
         hypotheses[0].id,
     )
-    return {"hypotheses": hypotheses, "budget": budget, "round_index": 0}
+    return {
+        "hypotheses": hypotheses,
+        "budget": budget,
+        "round_index": 0,
+        "evidence": mcp_evidence,
+        "probe_log": mcp_probe_log,
+    }
 
 
 def _seed_from_playbooks(state: IncidentState) -> list[Hypothesis]:

@@ -21,7 +21,12 @@ import urllib.request
 from dataclasses import dataclass
 from typing import Any
 
-DEFAULT_MCP_URL = "https://nirmal-mcp.ngrok.app/mcp/sse"
+# Local, not a teammate's personal ngrok tunnel. The old default pointed at an
+# external URL — safe only as long as someone was running it, and a landmine for
+# anyone else: any caller that forgets INCIMIN_MCP_URL silently dials out to a
+# tunnel it does not control. `src/production/main.py` serves this same server
+# over SSE on the loopback address, which is what actually ships with this repo.
+DEFAULT_MCP_URL = "http://127.0.0.1:8000/mcp/sse"
 
 # The server's own tool calls are slow (15-30s cold, sub-second once its caches are warm), so these
 # are deliberately generous — the failure we care about is a hung tunnel, not a slow query.

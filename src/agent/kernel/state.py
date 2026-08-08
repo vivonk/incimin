@@ -51,7 +51,7 @@ class Hypothesis(BaseModel):
     kind: str
     statement: str
     subject_service: str
-    origin: Literal["playbook", "topology", "history", "llm"]
+    origin: Literal["playbook", "topology", "history", "llm", "mcp"]
     prior: float = 0.0
     posterior: float = 0.0
     status: Literal["open", "refuted", "confirmed"] = "open"
