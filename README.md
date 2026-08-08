@@ -2,6 +2,8 @@
 
 Autonomous AI SRE agent that performs real-time, deterministic root-cause analysis during infrastructure incidents. Traverses the live service graph (Memgraph) and queries correlated telemetry (SigNoz/ClickHouse) to deliver a root cause before a human opens a dashboard.
 
+See [`docs/HACKATHON_SUBMISSION.md`](docs/HACKATHON_SUBMISSION.md) for the problem statement, the built solution, and an in-depth writeup of the system and agent architecture.
+
 ## Prerequisites
 
 - Docker + Docker Compose v2 (`docker compose`, not `docker-compose`)
