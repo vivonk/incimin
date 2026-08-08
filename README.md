@@ -95,8 +95,15 @@ uv run pytest
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `ANTHROPIC_API_KEY` | — | **Required.** The agent's chat model |
+| `ANTHROPIC_MODEL` | `claude-sonnet-5` | Override the model |
+| `LLM_TIMEOUT` | `120` | Seconds per LLM call |
 | `SIGNOZ_API_URL` | `http://localhost:3301` | SigNoz query service base URL |
 | `SIGNOZ_API_TOKEN` | — | SigNoz API token (optional for local) |
+
+The agent is **Anthropic-only**. The former `LLM_PROVIDER` switch (gemini, openrouter) was
+removed — a deterministic golden path cannot depend on which of three providers happens to be
+configured. A leftover `LLM_PROVIDER` in `.env` is ignored with a warning, not an error.
 
 Copy `.env.example` (if present) or export directly:
 
