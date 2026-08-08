@@ -1,8 +1,19 @@
 """The kernel loop.
 
-    ground ─▶ seed ─┬─▶ probe ×N ─▶ update_beliefs ─┬─▶ (loop back to probe)
-                    │                                └─▶ verify ─┬─▶ report
-                    └─▶ verify                                   └─▶ graceful_exit
+              ┌─▶ seed (Hypothesis Generation) ─┐
+    ground ───┤                                 ├─▶ update_beliefs ─┬─▶ (loop back to probe)
+   (Meta-Agent)└─▶ probe ×N (Probe Agent, rd 0) ─┘                   └─▶ verify ─┬─▶ report ─▶ synthesize
+                                                                                  └─▶ graceful_exit
+
+`seed` and round-0 `probe` fan out from `ground` concurrently and join back into `update_beliefs`
+(see `route_from_ground`) — round-0 probe selection never looks at hypothesis content, so nothing
+is gained by making Probe Agent wait for Hypothesis Generation to finish. Subsequent rounds stay
+sequential: `update_beliefs`'s own `dispatch` edge selects discriminating probes, which do depend
+on the hypotheses that round produced.
+
+`report` picks the winner by posterior, in code; `synthesize` is a separate node that asks an LLM
+to explain that already-decided winner and recommend next steps — it never gets a vote on the
+winner itself.
 
 Three properties the v1 graph did not have:
 
@@ -72,12 +83,33 @@ class ProbeNodeState(TypedDict):
 # --------------------------------------------------------------------------- ground
 
 
+META_AGENT_SYSTEM_PROMPT = """You are the Meta-Agent for an SRE incident investigation. A \
+deterministic topology traversal has already established the candidate services below — you do \
+not decide topology, and you cannot discover services outside this list.
+
+Your job is to gather supporting evidence via the MCP tools available to you, before hypothesis \
+generation begins:
+  - get_service_topology: a second, protocol-mediated view of the dependency graph, useful to \
+corroborate or extend what the traversal already found.
+  - get_system_events: looks for real recent deploys or changes, often the single strongest \
+signal for what caused an incident.
+
+Call whichever tools are useful. You do not have to call both, and you may call \
+get_system_events for more than one candidate service if that seems worthwhile. Never name a \
+service outside the candidate list — you have no way to corroborate a claim about one."""
+
+
 def ground_node(state: IncidentState) -> dict:
-    """Establish candidates before any hypothesis exists.
+    """Establish candidates before any hypothesis exists, then gather supporting evidence.
 
     Google SRE's agent grounds in topology/dependency data to fix "domain and intent" *before*
-    forming hypotheses; most agents jump straight from alert to speculation. This is a hard
-    edge rather than a tool call so the model cannot skip it.
+    forming hypotheses; most agents jump straight from alert to speculation. Candidate discovery
+    itself is a hard edge rather than a tool call, so the model cannot skip or reshape it — that
+    stays exactly as deterministic as it always was.
+
+    What the model *does* decide here is whether and how to reach for the MCP tools
+    (`_meta_agent_mcp_pass`) as a second evidence source alongside the BFS traversal. That pass
+    is skipped under `deterministic_mode()`, same as every other LLM/network call in the kernel.
     """
     alert = state.get("alert") or {}
     source_service = alert.get("service") or ""
@@ -86,45 +118,104 @@ def ground_node(state: IncidentState) -> dict:
     evidence: list[Evidence] = [dict(e) for e in result.evidence]
     candidates = result.candidate_services or ([source_service] if source_service else [])
 
+    probe_log: list[ProbeRun] = []
+    if not deterministic_mode():
+        mcp_evidence, mcp_probe_log = _meta_agent_mcp_pass(alert, candidates)
+        evidence += mcp_evidence
+        probe_log = mcp_probe_log
+
     return {
         "candidate_services": candidates,
         "evidence": evidence,
+        "probe_log": probe_log,
         "team_id": state.get("team_id") or DEFAULT_TEAM,
         "round_index": 0,
         "messages": [AIMessage(content=f"Grounded: {result.summary}")],
     }
 
 
+def _meta_agent_mcp_pass(alert: dict, candidates: list[str]) -> tuple[list[Evidence], list[ProbeRun]]:
+    """The Meta-Agent's own MCP tool use: the model decides whether and how to call
+    `get_service_topology` / `get_system_events`, not a fixed schedule.
+
+    Bounded to a single round — the model picks its tool calls once, they run, and their results
+    become Evidence directly. There is no second LLM turn to "react" to the results: each MCP
+    call already costs 15-30s cold, and this is evidence-gathering, not a conversation.
+
+    Never raises. A broken LLM or a broken MCP server degrades Meta-Agent back to whatever the
+    deterministic BFS traversal already produced — that traversal already ran, unconditionally,
+    before this is even called.
+    """
+    from src.agent.llm import build_llm
+
+    start, end = mcp_tools.lookback_window(alert.get("fired_at_ns"))
+    prompt = (
+        f"{META_AGENT_SYSTEM_PROMPT}\n\n"
+        f"Alert: {alert.get('alertname')} on service {alert.get('service')} "
+        f"(severity {alert.get('severity')}).\n"
+        f"Candidate services: {candidates or 'none'}\n"
+        f"If you call get_system_events, use start_time={start!r} end_time={end!r}."
+    )
+    try:
+        response = build_llm().bind_tools(mcp_tools.TOOLS).invoke(prompt)
+    except Exception as e:  # noqa: BLE001
+        log.warning("Meta-Agent MCP tool selection unavailable (%s); continuing without it", e)
+        return [], [
+            {
+                "probe_id": "mcp.meta_agent",
+                "dedup_key": "mcp:meta_agent:unavailable",
+                "status": "error",
+                "summary": f"{type(e).__name__}: {e}",
+                "evidence_count": 0,
+                "round_index": 0,
+            }
+        ]
+
+    evidence: list[Evidence] = []
+    probe_log: list[ProbeRun] = []
+    by_name = {t.name: t for t in mcp_tools.TOOLS}
+    for call in response.tool_calls or []:
+        tool = by_name.get(call["name"])
+        if tool is None:
+            continue
+        raw = tool.invoke(call["args"])
+        evidence += mcp_tools.tool_result_to_evidence(call["name"], call["args"], raw)
+        probe_log.append(mcp_tools.tool_result_to_probe_run(call["name"], call["args"], raw))
+    return evidence, probe_log
+
+
 # --------------------------------------------------------------------------- seed
 
 
 def seed_node(state: IncidentState) -> dict:
-    """Hypothesis generation: playbook, topology, MCP grounding, then the model.
+    """Hypothesis generation: playbook, topology, evidence, then the model.
 
-    MCP grounding — calling `get_service_topology` and `get_system_events` on the
-    `incimin-sre` server — runs unconditionally (network permitting), not as a
-    last resort like the LLM tier. See `mcp_tools.gather` for why: a real recent
-    deploy is grounds for a hypothesis in its own right, not just corroboration
-    for one another tier already guessed. The LLM tier still fires only if the
-    deterministic tiers, MCP included, underfill.
+    Runs concurrently with a first breadth round of probing (see `route_from_ground`) — round-0
+    probe selection doesn't depend on hypothesis content, only on there being candidate services
+    worth investigating, so there is nothing to gain by making Probe Agent wait for this node.
 
-    Both are skipped under `deterministic_mode()` — network calls and model calls
-    are exactly the non-determinism the golden path and the kernel tests must not
-    have.
+    Fourth tier reads `state["evidence"]` — which by the time this runs already carries whatever
+    Meta-Agent's own MCP tool use found — and turns any real deploy/change evidence into a
+    hypothesis (`mcp_tools.hypotheses_from_evidence`). This is deliberately evidence-driven
+    rather than a repeat MCP call: hypothesis generation's job is to use what evidence exists, not
+    to go fetch its own.
+
+    The LLM tier still fires only if the deterministic tiers underfill, and is skipped (like the
+    LLM tier) under `deterministic_mode()` — model calls are exactly the non-determinism the
+    golden path and the kernel tests must not have.
     """
     alert = state.get("alert") or {}
     candidates = list(state.get("candidate_services") or [])
+    evidence = list(state.get("evidence") or [])
 
     hypotheses = _seed_from_playbooks(state) or []
     if len(hypotheses) < MIN_HYPOTHESES:
         hypotheses += _seed_from_topology(candidates, exclude={h.subject_service for h in hypotheses})
 
-    mcp_evidence: list[Evidence] = []
-    mcp_probe_log: list[ProbeRun] = []
-    if not deterministic_mode():
-        mcp_evidence, mcp_hypotheses, mcp_probe_log = mcp_tools.gather(alert, candidates)
-        seen = {(h.kind, h.subject_service) for h in hypotheses}
-        hypotheses += [h for h in mcp_hypotheses if (h.kind, h.subject_service) not in seen]
+    seen = {(h.kind, h.subject_service) for h in hypotheses}
+    hypotheses += [
+        h for h in mcp_tools.hypotheses_from_evidence(evidence) if (h.kind, h.subject_service) not in seen
+    ]
 
     if len(hypotheses) < MIN_HYPOTHESES and not deterministic_mode():
         hypotheses += _seed_from_llm(alert, candidates, existing=hypotheses)
@@ -134,8 +225,6 @@ def seed_node(state: IncidentState) -> dict:
             "hypotheses": [],
             "budget": Budget(max_rounds=0, exit_reason="no_hypotheses"),
             "round_index": 0,
-            "evidence": mcp_evidence,
-            "probe_log": mcp_probe_log,
         }
 
     hypotheses = belief_math.seed_posteriors(hypotheses)
@@ -146,13 +235,7 @@ def seed_node(state: IncidentState) -> dict:
         budget.max_rounds,
         hypotheses[0].id,
     )
-    return {
-        "hypotheses": hypotheses,
-        "budget": budget,
-        "round_index": 0,
-        "evidence": mcp_evidence,
-        "probe_log": mcp_probe_log,
-    }
+    return {"hypotheses": hypotheses, "budget": budget, "round_index": 0}
 
 
 def _seed_from_playbooks(state: IncidentState) -> list[Hypothesis]:
@@ -240,6 +323,42 @@ def _seed_from_llm(alert: dict, candidates: list[str], *, existing: list[Hypothe
 
 
 # --------------------------------------------------------------------------- probe fan-out
+
+
+def route_from_ground(state: IncidentState) -> list:
+    """Fan out to Hypothesis Generation and a first breadth round of probing at the same time.
+
+    Round-0 probe selection (`select_probes`, `round_index == 0`) doesn't look at hypothesis
+    *content* at all — it runs every cheap probe regardless, on the theory that at round 0 every
+    hypothesis is still a guess. So there is nothing for Probe Agent to gain by waiting for
+    `seed` to finish, and every incident pays that wait for free today.
+
+    `hypotheses=[]` is passed to `select_probes` deliberately — the round-0 branch never reads
+    it, and passing a real (not-yet-computed) list would be a lie about what's known at this
+    point in the graph.
+
+    Returns a mixed list of the plain node name `"seed"` and `Send` objects for the probes — a
+    conditional edge is allowed to route to both static targets and dynamic fan-out targets in
+    the same return.
+    """
+    candidates = list(state.get("candidate_services") or [])
+    if not candidates:
+        # Nothing to probe with an empty service list; let seed_node reach its own
+        # `no_hypotheses` short-circuit rather than firing degenerate probe requests.
+        return ["seed"]
+
+    requests = select_probes(
+        hypotheses=[],
+        registry=registry_for_team(state.get("team_id") or DEFAULT_TEAM),
+        seen_keys=[],
+        round_index=0,
+        services=candidates,
+    )
+    sends = [
+        Send("probe", {"request": r.model_dump(mode="json"), "round_index": r.round_index})
+        for r in requests
+    ]
+    return ["seed", *sends]
 
 
 def pending_requests(state: IncidentState) -> list[ProbeRequest]:
@@ -492,6 +611,66 @@ def report_node(state: IncidentState) -> dict:
     return {"messages": [AIMessage(content="\n".join(lines))], "synthesis": synthesis}
 
 
+def synthesize_node(state: IncidentState) -> dict:
+    """LLM-authored explanation of the deterministic winner, plus advisory next steps.
+
+    The root cause is never decided here — `report_node` already picked the winner by posterior,
+    in code, before this runs, and that stays exactly as arithmetic and replayable as the rest of
+    the belief system. This node's only job is to explain that decision in language a human can
+    act on: why the cited evidence points there, what was ruled out and why, and what to look at
+    next — advisory operational guidance, distinct from `propose_remediation_node`'s later,
+    gated, allowlisted action proposal.
+
+    Skipped under `deterministic_mode()` and whenever there is nothing to explain. If the call
+    fails, nothing is lost: `report_node`'s deterministic message is still the last AIMessage on
+    `messages`, and that is what a human sees — no part of the incident's recorded outcome
+    (`synthesis`, `root_cause_service`, `confidence`) depends on this node succeeding.
+    """
+    synthesis = state.get("synthesis")
+    if synthesis is None or deterministic_mode():
+        return {}
+
+    hypotheses = list(state.get("hypotheses") or [])
+    winner = belief_math.leader(hypotheses)
+    if winner is None:
+        return {}
+
+    from pydantic import BaseModel, Field
+
+    from src.agent.llm import build_llm
+
+    class SynthesisNarrative(BaseModel):
+        explanation: str = Field(description="Why the evidence points at this root cause, in plain language.")
+        next_steps: list[str] = Field(description="Concrete, advisory next actions for the on-call human.")
+
+    by_id = {e["id"]: e for e in state.get("evidence") or []}
+    cited = [by_id[r] for r in winner.supporting_refs if r in by_id]
+    ruled_out = [h for h in hypotheses if h.id != winner.id]
+    probes = [r["probe_id"] for r in state.get("probe_log") or []]
+
+    prompt = (
+        "You are writing the human-facing summary for a resolved SRE incident investigation. "
+        "The root cause below was already selected deterministically by evidence-weighted "
+        "posterior — do not second-guess or restate it as uncertain, and do not name a different "
+        "service. Explain why it holds, and recommend concrete next steps.\n\n"
+        f"Root cause: {winner.subject_service} — {winner.statement} "
+        f"(confidence: {synthesis.confidence})\n"
+        f"Supporting evidence: {[e['summary'][:200] for e in cited] or 'none cited'}\n"
+        f"Ruled out: {[h.statement for h in ruled_out] or 'nothing else considered'}\n"
+        f"Probes run: {probes or 'none'}"
+    )
+    try:
+        narrative = build_llm().with_structured_output(SynthesisNarrative).invoke(prompt)
+    except Exception as e:  # noqa: BLE001
+        log.warning("synthesis narrative unavailable (%s); deterministic report stands", e)
+        return {}
+
+    text = narrative.explanation.strip()
+    if narrative.next_steps:
+        text += "\n\nNext steps:\n" + "\n".join(f"- {s}" for s in narrative.next_steps)
+    return {"messages": [AIMessage(content=text)]}
+
+
 # --------------------------------------------------------------------------- human gates
 #
 # `interrupt()` replays its node from the top on resume — not from the line that
@@ -655,19 +834,25 @@ def build_graph(*, gates: bool = True) -> StateGraph:
     workflow.add_node("update_beliefs", update_beliefs_node)
     workflow.add_node("verify", verify_node)
     workflow.add_node("report", report_node)
+    workflow.add_node("synthesize", synthesize_node)
     workflow.add_node("graceful_exit", graceful_exit_node)
 
     workflow.set_entry_point("ground")
-    workflow.add_edge("ground", "seed")
-    workflow.add_conditional_edges("seed", dispatch, ["probe", "verify"])
+    # Hypothesis Generation and a first breadth round of Probe Agent run concurrently — see
+    # `route_from_ground`. Both `seed` and every round-0 `probe` instance route into
+    # `update_beliefs` as plain edges, so it fires exactly once per wave, after everything from
+    # this fan-out has merged (the same join pattern the probe-only fan-out already relied on).
+    workflow.add_conditional_edges("ground", route_from_ground, ["seed", "probe"])
+    workflow.add_edge("seed", "update_beliefs")
     workflow.add_edge("probe", "update_beliefs")
     workflow.add_conditional_edges("update_beliefs", dispatch, ["probe", "verify"])
     workflow.add_conditional_edges(
         "verify", route_after_verify, {"report": "report", "graceful_exit": "graceful_exit"}
     )
+    workflow.add_edge("report", "synthesize")
 
     if not gates:
-        workflow.add_edge("report", END)
+        workflow.add_edge("synthesize", END)
         workflow.add_edge("graceful_exit", END)
         return workflow
 
@@ -676,9 +861,9 @@ def build_graph(*, gates: bool = True) -> StateGraph:
     workflow.add_node("execute_remediation", execute_remediation_node)
     workflow.add_node("await_escalation", await_escalation_node)
 
-    # A confident report earns a remediation proposal; a run that could not
+    # A confident, explained report earns a remediation proposal; a run that could not
     # establish a cause earns a human sign-off before it is handed on.
-    workflow.add_edge("report", "propose_remediation")
+    workflow.add_edge("synthesize", "propose_remediation")
     workflow.add_conditional_edges(
         "propose_remediation", route_after_proposal, {"await_approval": "await_approval", "__end__": END}
     )
