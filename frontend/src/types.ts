@@ -72,6 +72,44 @@ export interface StepOutput {
   }
 }
 
+export interface RemediationProposal {
+  action_id?: string
+  service?: string
+  container?: string
+  argv?: string[]
+  statement?: string
+  rationale?: string
+  executable?: boolean
+  reason?: string
+  hypothesis?: string
+  posterior?: number
+  // escalation gates carry these instead
+  gate?: string
+  best_guess?: { service: string; statement: string; posterior: number }
+  failed_checks?: string[]
+  detail?: string
+}
+
+export interface Approval {
+  id: string
+  incident_id: string
+  kind: 'remediation' | 'escalation'
+  proposal: RemediationProposal
+  decision: 'pending' | 'approved' | 'rejected' | 'executing' | 'executed'
+  decided_by: string | null
+  decided_at: string | null
+  note: string | null
+  execution_result: {
+    ok: boolean
+    detail: string
+    argv: string[]
+    stdout?: string
+    stderr?: string
+    returncode?: number | null
+  } | null
+  created_at: string
+}
+
 export interface AgentStep {
   id: number
   incident_id: string
