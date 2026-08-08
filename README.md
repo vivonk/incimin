@@ -104,6 +104,40 @@ Copy `.env.example` (if present) or export directly:
 export SIGNOZ_API_URL=http://localhost:3301
 ```
 
+### Agent tracing (Langfuse)
+
+Every agent run — the Coordinator's tool-calling loop, the synthesis step, and the LLM calls
+the sub-agents make inside their tools — is exported to [Langfuse](https://langfuse.com) as a
+single trace when credentials are present.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LANGFUSE_PUBLIC_KEY` | — | Enables tracing (with the secret key). Absent → tracing is off |
+| `LANGFUSE_SECRET_KEY` | — | Enables tracing (with the public key) |
+| `LANGFUSE_BASE_URL` | `https://cloud.langfuse.com` | Langfuse host; use this for self-hosted |
+| `LANGFUSE_HOST` | — | Legacy alias for `LANGFUSE_BASE_URL` |
+| `LANGFUSE_TRACING_ENABLED` | `true` | Set `false` to disable without removing the keys |
+| `LANGFUSE_VERIFY_SSL` | `true` | Set `false` behind a TLS-intercepting corporate proxy |
+
+**Tracing is optional and fails open.** Missing keys, an unreachable host, or an uninstalled
+package each degrade to an untraced run with one log line — never a failed incident triage.
+
+Confirm the wiring before you need it:
+
+```bash
+uv run python scripts/verify_langfuse.py
+```
+
+It checks credentials → handler → auth → real trace delivery, stopping at the first failure,
+and emits one span tagged `incimin-verify` that is safe to delete from the Langfuse UI.
+
+How runs are grouped in the UI:
+
+| Entry point | Trace name | Session |
+|-------------|-----------|---------|
+| Webhook (`src/webhook/app.py`) | `sre-alert:{alertname}` | Alert fingerprint — every Alertmanager resend of one incident groups together |
+| Streamlit UI (`src/ui/app.py`) | `sre-agent:chat` | One per browser session, so a multi-turn investigation reads as one conversation |
+
 ## Project layout
 
 ```
