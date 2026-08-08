@@ -23,7 +23,7 @@ from typing import Literal, TypedDict
 
 from langchain_core.messages import AIMessage
 from langgraph.graph import END, StateGraph
-from langgraph.types import Send
+from langgraph.types import Send, interrupt
 
 from src.agent.kernel import beliefs as belief_math
 from src.agent.kernel.budget import DEFAULT_TAU, size_budget, stop_reason
@@ -468,6 +468,124 @@ def report_node(state: IncidentState) -> dict:
     return {"messages": [AIMessage(content="\n".join(lines))], "synthesis": synthesis}
 
 
+# --------------------------------------------------------------------------- human gates
+#
+# `interrupt()` replays its node from the top on resume — not from the line that
+# paused. Every node below is therefore split so that nothing with a side effect
+# runs before the interrupt call: `propose_remediation` computes and returns, the
+# `await_*` nodes interrupt first and act on the answer afterwards, and execution
+# lives in its own node reached only after a decision exists.
+
+
+def propose_remediation_node(state: IncidentState) -> dict:
+    """Turn the winning hypothesis into a concrete, allowlisted proposal.
+
+    Pure: builds the proposal and returns it. No interrupt, no side effect, so
+    replaying it is free. The action is chosen by lookup, never composed by a
+    model — see `src/agent/remediation.py`.
+    """
+    from src.agent import remediation
+
+    winner = belief_math.leader(list(state.get("hypotheses") or []))
+    if winner is None:
+        return {"remediation_proposal": None}
+
+    proposal = remediation.propose("restart_service", winner.subject_service)
+    proposal["hypothesis"] = winner.statement
+    proposal["posterior"] = round(winner.posterior, 4)
+    proposal["rationale"] = (
+        f"{winner.subject_service} leads at posterior {winner.posterior:.2f} "
+        f"({winner.kind}). {winner.statement}"
+    )
+    log.info(
+        "proposing %s for %s (executable=%s)",
+        proposal.get("action_id"),
+        winner.subject_service,
+        proposal.get("executable"),
+    )
+    return {"remediation_proposal": proposal}
+
+
+def route_after_proposal(state: IncidentState) -> Literal["await_approval", "__end__"]:
+    """A proposal that cannot be executed is not worth waking a human for."""
+    p = state.get("remediation_proposal")
+    return "await_approval" if p and p.get("executable") else "__end__"
+
+
+def await_approval_node(state: IncidentState) -> dict:
+    """Block until a human approves or rejects the remediation.
+
+    `interrupt()` is the FIRST statement that matters here. The value it returns is
+    supplied by `Command(resume=...)`; on resume the node re-executes from the top,
+    so anything above this line would run twice.
+    """
+    decision = interrupt(
+        {
+            "gate": "remediation",
+            "proposal": state.get("remediation_proposal"),
+        }
+    )
+    decision = decision or {}
+    log.info("remediation gate resolved: %s", decision.get("decision"))
+    return {"approval_decision": decision}
+
+
+def route_after_approval(state: IncidentState) -> Literal["execute_remediation", "__end__"]:
+    d = state.get("approval_decision") or {}
+    return "execute_remediation" if d.get("decision") == "approved" else "__end__"
+
+
+def execute_remediation_node(state: IncidentState) -> dict:
+    """Run the approved action.
+
+    Reached only with a decision already in state, so this node never replays a
+    pending gate. The caller is still expected to have claimed the approval row
+    atomically — this function does not own that guarantee, the database does.
+    """
+    from src.agent import remediation
+
+    proposal = state.get("remediation_proposal") or {}
+    result = remediation.execute(proposal)
+    log.info("remediation executed: ok=%s %s", result.ok, result.detail)
+
+    verb = "Executed" if result.ok else "Attempted"
+    return {
+        "execution_result": result.to_dict(),
+        "messages": [
+            AIMessage(
+                content=f"{verb} remediation: {proposal.get('statement')}\nResult: {result.detail}"
+            )
+        ],
+    }
+
+
+def await_escalation_node(state: IncidentState) -> dict:
+    """Ask a human to sign off before the incident is handed on.
+
+    Same shape as the approval gate, and the same reason: interrupt first, act
+    after. The agent does not get to decide on its own that it is beaten.
+    """
+    top = belief_math.leader(list(state.get("hypotheses") or []))
+    vr = state.get("verification_result") or {}
+    decision = interrupt(
+        {
+            "gate": "escalation",
+            "best_guess": None
+            if top is None
+            else {
+                "service": top.subject_service,
+                "statement": top.statement,
+                "posterior": round(top.posterior, 4),
+            },
+            "failed_checks": vr.get("failed_checks") or [],
+            "detail": vr.get("detail"),
+        }
+    )
+    decision = decision or {}
+    log.info("escalation gate resolved: %s", decision.get("decision"))
+    return {"escalation_decision": decision}
+
+
 def graceful_exit_node(state: IncidentState) -> dict:
     vr = state.get("verification_result") or {}
     budget = state.get("budget") or Budget()
@@ -487,7 +605,14 @@ def graceful_exit_node(state: IncidentState) -> dict:
 # --------------------------------------------------------------------------- assembly
 
 
-def build_graph() -> StateGraph:
+def build_graph(*, gates: bool = True) -> StateGraph:
+    """Assemble the kernel.
+
+    `gates=False` drops the human-in-the-loop nodes, giving the old
+    report/graceful_exit -> END shape. Used by tests and by any caller compiling
+    without a checkpointer: `interrupt()` requires one, so a gated graph compiled
+    bare would fail at the first pause rather than at build time.
+    """
     workflow = StateGraph(IncidentState)
     workflow.add_node("ground", ground_node)
     workflow.add_node("seed", seed_node)
@@ -512,9 +637,35 @@ def build_graph() -> StateGraph:
     workflow.add_conditional_edges(
         "verify", route_after_verify, {"report": "report", "graceful_exit": "graceful_exit"}
     )
-    workflow.add_edge("report", END)
-    workflow.add_edge("graceful_exit", END)
+
+    if not gates:
+        workflow.add_edge("report", END)
+        workflow.add_edge("graceful_exit", END)
+        return workflow
+
+    workflow.add_node("propose_remediation", propose_remediation_node)
+    workflow.add_node("await_approval", await_approval_node)
+    workflow.add_node("execute_remediation", execute_remediation_node)
+    workflow.add_node("await_escalation", await_escalation_node)
+
+    # A confident report earns a remediation proposal; a run that could not
+    # establish a cause earns a human sign-off before it is handed on.
+    workflow.add_edge("report", "propose_remediation")
+    workflow.add_conditional_edges(
+        "propose_remediation", route_after_proposal, {"await_approval": "await_approval", "__end__": END}
+    )
+    workflow.add_conditional_edges(
+        "await_approval",
+        route_after_approval,
+        {"execute_remediation": "execute_remediation", "__end__": END},
+    )
+    workflow.add_edge("execute_remediation", END)
+
+    workflow.add_edge("graceful_exit", "await_escalation")
+    workflow.add_edge("await_escalation", END)
     return workflow
 
 
-app = build_graph().compile()
+# Module-level app keeps the ungated shape: it compiles without a checkpointer, and
+# `interrupt()` needs one. The API compiles its own gated graph with AsyncPostgresSaver.
+app = build_graph(gates=False).compile()

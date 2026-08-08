@@ -29,12 +29,19 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Query, Request
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
 
 from src.api import db
 from src.api import repository as repo
 from src.api import runner
 from src.api.settings import settings
-from src.webhook.alert import SERVICE_LABEL_KEYS, parse_alerts
+from src.webhook.alert import SERVICE_LABEL_KEYS, AlertContext, parse_alerts
+
+
+class ApprovalRequest(BaseModel):
+    decision: str = Field(description="'approved' or 'rejected'")
+    decided_by: str = "operator"
+    note: str | None = None
 
 logging.basicConfig(
     level=settings.log_level.upper(),
@@ -47,7 +54,7 @@ log = logging.getLogger("incimin.api")
 async def lifespan(_: FastAPI):
     await db.open_pool()
     await db.apply_schema()
-    await db.setup_checkpointer_tables()
+    await db.setup_checkpointer()
     if orphaned := await repo.mark_orphans():
         log.warning("marked %d incident(s) orphaned from a previous run", orphaned)
     try:
@@ -135,6 +142,75 @@ async def get_incident(incident_id: uuid.UUID) -> JSONResponse:
 @app.get("/api/incidents/{incident_id}/steps")
 async def get_steps(incident_id: uuid.UUID) -> list[dict]:
     return [_serialize(r) for r in await repo.list_steps(incident_id)]
+
+
+@app.get("/api/incidents/{incident_id}/approvals")
+async def get_approvals(incident_id: uuid.UUID) -> list[dict]:
+    return [_serialize(r) for r in await repo.list_approvals(incident_id)]
+
+
+@app.post("/api/incidents/{incident_id}/approve")
+async def approve(incident_id: uuid.UUID, body: ApprovalRequest) -> JSONResponse:
+    """Record a human decision on the open gate and resume the paused run.
+
+    The decision is written before the graph is resumed, and written with a
+    `WHERE decision = 'pending'` predicate. Two people clicking Approve at the same
+    instant both arrive here; exactly one gets a row back and resumes the run. The
+    other is told the gate was already decided rather than starting a second
+    execution of the same restart.
+    """
+    if body.decision not in ("approved", "rejected"):
+        return JSONResponse(
+            {"detail": "decision must be 'approved' or 'rejected'"}, status_code=400
+        )
+
+    incident = await repo.get_incident(incident_id)
+    if incident is None:
+        return JSONResponse({"detail": "not found"}, status_code=404)
+
+    gate = await repo.pending_approval(incident_id)
+    if gate is None:
+        return JSONResponse({"detail": "no pending approval for this incident"}, status_code=409)
+
+    decided = await repo.decide_approval(gate["id"], body.decision, body.decided_by, body.note)
+    if decided is None:
+        # Lost the race: someone else decided between our read and our write.
+        return JSONResponse({"detail": "approval was already decided"}, status_code=409)
+
+    ctx = _context_from(incident)
+    runner.spawn_resume(
+        incident_id,
+        ctx,
+        {
+            "decision": body.decision,
+            "note": body.note,
+            "decided_by": body.decided_by,
+            "approval_id": str(gate["id"]),
+            "kind": gate["kind"],
+        },
+    )
+    return JSONResponse(
+        {"status": "resuming", "decision": body.decision, "approval_id": str(gate["id"])}
+    )
+
+
+def _context_from(incident: dict) -> AlertContext:
+    """Rebuild the AlertContext for a resumed run from the stored payload.
+
+    Parsed through the same `parse_alerts` the webhook used, so a resume cannot
+    drift from the original interpretation of the alert — notably its timestamps.
+    """
+    raw = incident.get("raw") or {}
+    parsed = parse_alerts(raw)
+    if parsed:
+        return parsed[0]
+    return AlertContext(
+        alertname=incident["alertname"],
+        service=incident["service"],
+        severity=incident.get("severity"),
+        message=incident.get("message") or "",
+        fingerprint=incident.get("fingerprint"),
+    )
 
 
 def _serialize(row: dict) -> dict:

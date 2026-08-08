@@ -207,8 +207,89 @@ def _summarize(state: dict) -> dict:
     return out
 
 
+async def graph_for(checkpointer) -> Any:
+    """Compile the kernel with human gates against a durable checkpointer.
+
+    Gates and the checkpointer are one decision: `interrupt()` cannot pause without
+    somewhere to persist the pause, so a gated graph compiled bare would fail at the
+    first gate rather than at build time.
+    """
+    from src.agent.kernel.graph import build_graph
+
+    return build_graph(gates=True).compile(checkpointer=checkpointer)
+
+
+def thread_config(incident_id: uuid.UUID, ctx: AlertContext, target: str = "agent") -> dict:
+    """Trace config plus the checkpoint thread id.
+
+    The thread is the incident's own id, not a per-run uuid: resuming after an
+    approval must land on the same thread the pause was written to, and that has to
+    survive a process restart, so it cannot be generated at run time.
+    """
+    config = dict(trace_config(ctx, target))
+    configurable = dict(config.get("configurable") or {})
+    configurable["thread_id"] = str(incident_id)
+    config["configurable"] = configurable
+    return config
+
+
+async def _drain(stream, recorder: StepRecorder) -> tuple[str, Any]:
+    """Consume graph updates into step rows. Returns (terminal text, synthesis)."""
+    final = ""
+    synthesis: Any = None
+    async for update in stream:
+        for node, state in update.items():
+            if not isinstance(state, dict):
+                continue
+            if state.get("synthesis") is not None:
+                synthesis = state["synthesis"]
+            if text := await recorder.consume(node, state):
+                final = text
+    return final, synthesis
+
+
+async def _settle(incident_id: uuid.UUID, graph, config: dict, final: str, synthesis: Any) -> None:
+    """Record where the run ended: paused at a gate, or finished.
+
+    A pause is not visible in `stream_mode="updates"` — that reports node
+    completions only. The authoritative answer is the checkpoint's pending tasks,
+    which is why this reads `get_state` rather than inferring from the stream.
+    """
+    snapshot = await graph.aget_state(config)
+    pending = getattr(snapshot, "interrupts", None) or getattr(snapshot, "tasks", ())
+
+    payload = None
+    for item in pending:
+        value = getattr(item, "value", None)
+        if value is None and getattr(item, "interrupts", None):
+            value = item.interrupts[0].value
+        if isinstance(value, dict) and value.get("gate"):
+            payload = value
+            break
+
+    if payload is not None:
+        kind = "remediation" if payload.get("gate") == "remediation" else "escalation"
+        proposal = payload.get("proposal") or payload
+        await repo.open_approval(incident_id, kind, proposal)
+        await repo.set_status(incident_id, "awaiting_approval", f"await_{kind}")
+        log.info("[%s] paused at %s gate", incident_id, kind)
+        return
+
+    values = getattr(snapshot, "values", {}) or {}
+    exec_result = values.get("execution_result")
+    await repo.set_result(
+        incident_id,
+        status="done",
+        final_answer=final or "agent produced no final message",
+        root_cause_service=getattr(synthesis, "root_cause_service", None),
+        confidence=getattr(synthesis, "confidence", None),
+        evidence_refs=list(getattr(synthesis, "evidence_refs", []) or []) or None,
+        error=None if not exec_result or exec_result.get("ok") else exec_result.get("detail"),
+    )
+
+
 async def run_incident(incident_id: uuid.UUID, ctx: AlertContext) -> None:
-    """Drive the meta-agent for one incident. Must never raise — nothing awaits this."""
+    """Drive the kernel for one incident. Must never raise — nothing awaits this."""
     async with _slots:
         started = time.monotonic()
         recorder = StepRecorder(incident_id)
@@ -222,7 +303,11 @@ async def run_incident(incident_id: uuid.UUID, ctx: AlertContext) -> None:
             from langchain_core.messages import HumanMessage
 
             from src.agent.kernel.graph import DEFAULT_TEAM
-            from src.agent.kernel.graph import app as meta_agent
+
+            from src.api.db import checkpointer
+
+            graph = await graph_for(checkpointer())
+            config = thread_config(incident_id, ctx)
 
             alert = ctx.to_kernel_alert()
             inputs = {
@@ -239,33 +324,11 @@ async def run_incident(incident_id: uuid.UUID, ctx: AlertContext) -> None:
                 "verification_result": None,
             }
 
-            final = ""
-            synthesis: Any = None
-            async for update in meta_agent.astream(
-                inputs, stream_mode="updates", config=trace_config(ctx, "agent")
-            ):
-                for node, state in update.items():
-                    if not isinstance(state, dict):
-                        continue
-                    if state.get("synthesis") is not None:
-                        synthesis = state["synthesis"]
-                    if text := await recorder.consume(node, state):
-                        final = text
-
-            await repo.set_result(
-                incident_id,
-                status="done",
-                final_answer=final or "meta-agent produced no final message",
-                root_cause_service=getattr(synthesis, "root_cause_service", None),
-                confidence=getattr(synthesis, "confidence", None),
-                evidence_refs=list(getattr(synthesis, "evidence_refs", []) or []) or None,
+            final, synthesis = await _drain(
+                graph.astream(inputs, stream_mode="updates", config=config), recorder
             )
-            log.info(
-                "[%s] ROOT CAUSE ANALYSIS (%.1fs)\n%s",
-                ctx.service,
-                time.monotonic() - started,
-                final,
-            )
+            await _settle(incident_id, graph, config, final, synthesis)
+            log.info("[%s] run settled (%.1fs)", ctx.service, time.monotonic() - started)
         except Exception as exc:
             log.exception("[%s] agent run failed", ctx.service)
             try:
@@ -276,3 +339,83 @@ async def run_incident(incident_id: uuid.UUID, ctx: AlertContext) -> None:
             # Agent tasks finish before Langfuse's batch timer fires; without this the
             # trace for a completed incident can sit unsent.
             tracing.flush()
+
+
+async def resume_incident(incident_id: uuid.UUID, ctx: AlertContext, decision: dict) -> None:
+    """Resume a paused run with a human's decision. Must never raise.
+
+    The decision reaches the graph as `Command(resume=...)`, which re-enters the
+    interrupted node from the top — everything above its `interrupt()` call runs
+    again, which is why those nodes hold no side effects.
+    """
+    from langgraph.types import Command
+
+    approval_id = decision.get("approval_id")
+    approved = decision.get("decision") == "approved"
+    # Only a remediation gate executes anything. An escalation gate is a sign-off:
+    # approving it hands the incident to a human, it does not run a command, so it
+    # must not be claimed for execution or have an execution result recorded.
+    executes = approved and decision.get("kind") == "remediation"
+
+    async with _slots:
+        recorder = StepRecorder(incident_id)
+        # Continue numbering after the steps the first leg already wrote, so the
+        # resumed leg appends to the graph instead of colliding with it.
+        recorder.seq = len(await repo.list_steps(incident_id))
+        try:
+            # Take ownership before anything can run. `decide_approval` already
+            # serialised the decision, but this second gate covers the other path
+            # into execution: a run resumed twice after a crash. Zero rows back
+            # means someone else owns it — stop rather than restart a container a
+            # second time.
+            if executes and approval_id:
+                claimed = await repo.claim_for_execution(uuid.UUID(str(approval_id)))
+                if claimed is None:
+                    log.warning("[%s] approval already claimed; not executing again", incident_id)
+                    await repo.set_status(incident_id, "done", None)
+                    return
+                await repo.set_status(incident_id, "executing_remediation", "execute_remediation")
+            else:
+                await repo.set_status(incident_id, "agent_running", "resuming")
+
+            from src.api.db import checkpointer
+
+            graph = await graph_for(checkpointer())
+            config = thread_config(incident_id, ctx)
+
+            final, synthesis = await _drain(
+                graph.astream(Command(resume=decision), stream_mode="updates", config=config),
+                recorder,
+            )
+
+            if executes and approval_id:
+                snapshot = await graph.aget_state(config)
+                result = (getattr(snapshot, "values", {}) or {}).get("execution_result") or {
+                    "ok": False,
+                    "detail": "graph produced no execution result",
+                }
+                await repo.record_execution(uuid.UUID(str(approval_id)), result)
+
+            await _settle(incident_id, graph, config, final, synthesis)
+
+            # Only a successful remediation resolves an incident. Everything else
+            # leaves a human holding it, and saying "done" would hide that:
+            # a rejected fix still needs someone, and an escalation — approved or
+            # not — is by definition a handover.
+            if decision.get("kind") == "escalation" or not approved:
+                await repo.set_status(incident_id, "needs_human", None)
+        except Exception as exc:
+            log.exception("[%s] resume failed", incident_id)
+            try:
+                await repo.set_result(incident_id, status="failed", error=f"{type(exc).__name__}: {exc}")
+            except Exception:
+                log.exception("[%s] could not record resume failure", incident_id)
+        finally:
+            tracing.flush()
+
+
+def spawn_resume(incident_id: uuid.UUID, ctx: AlertContext, decision: dict) -> asyncio.Task:
+    task = asyncio.create_task(resume_incident(incident_id, ctx, decision))
+    _tasks.add(task)
+    task.add_done_callback(_tasks.discard)
+    return task
