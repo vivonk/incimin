@@ -141,14 +141,23 @@ How runs are grouped in the UI:
 
 | Entry point | Trace name | Session |
 |-------------|-----------|---------|
-| Webhook (`src/webhook/app.py`) | `sre-alert:{alertname}` | Alert fingerprint — every Alertmanager resend of one incident groups together |
+| Incident API (`src/api/runner.py`) | `sre-alert:{alertname}` | Alert fingerprint — every Alertmanager resend of one incident groups together |
 | Streamlit UI (`src/ui/app.py`) | `sre-agent:chat` | One per browser session, so a multi-turn investigation reads as one conversation |
 
 ## Project layout
 
 ```
+src/api/                     # Incident dashboard API
+  main.py                    # FastAPI: POST /webhook/signoz + incident REST
+  schema.sql                 # Postgres DDL, applied idempotently at startup
+  db.py                      # psycopg3 pool + checkpointer setup
+  repository.py              # parameterized data access
+  runner.py                  # background agent run + step recording
+frontend/                    # Vite + React dashboard (dev :5173)
+src/agent/kernel/            # v2 hypothesis-tournament loop
+src/agent/probes/            # evidence probes (logs, changes)
 src/production/
-  main.py                    # FastAPI webhook ingestion API
+  main.py                    # FastAPI deploy/PR ingestion + MCP SSE
   db.py                      # ClickHouse + Memgraph persistence
   topology/
     models.py                # ServiceNode, ServiceEdge (Pydantic + entity metadata)
