@@ -12,3 +12,7 @@ build/
 
 # GSD research tool cache — transient, not planning content
 .planning/research/.cache/
+
+node_modules/
+frontend/dist/
+.playwright-mcp/
