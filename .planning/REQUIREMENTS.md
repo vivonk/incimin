@@ -83,12 +83,34 @@ Deferred — tracked, not in this roadmap.
 
 ## Traceability
 
-Filled during roadmap creation.
-
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| INC-01 … INC-07 | TBD | Pending |
-| HITL-01 … HITL-07 | TBD | Pending |
-| UI-01 … UI-09 | TBD | Pending |
-| OPS-01 … OPS-03 | TBD | Pending |
-| RET-01 … RET-03 | TBD | Pending |
+| INC-01 | Phase 10 | Pending |
+| INC-02 | Phase 10 | Pending |
+| INC-03 | Phase 10 | Pending |
+| INC-04 | Phase 10 | Pending |
+| INC-05 | Phase 10 | Pending |
+| INC-06 | Phase 10 | Pending |
+| INC-07 | Phase 11 | Pending |
+| HITL-01 | Phase 11 | Pending |
+| HITL-02 | Phase 11 | Pending |
+| HITL-03 | Phase 11 | Pending |
+| HITL-04 | Phase 11 | Pending |
+| HITL-05 | Phase 11 | Pending |
+| HITL-06 | Phase 11 | Pending |
+| HITL-07 | Phase 11 | Pending |
+| UI-01 | Phase 10 | Pending |
+| UI-02 | Phase 12 | Pending |
+| UI-03 | Phase 10 | Pending |
+| UI-04 | Phase 12 | Pending |
+| UI-05 | Phase 12 | Pending |
+| UI-06 | Phase 12 | Pending |
+| UI-07 | Phase 12 | Pending |
+| UI-08 | Phase 12 | Pending |
+| UI-09 | Phase 12 | Pending |
+| OPS-01 | Phase 12 | Pending |
+| OPS-02 | Phase 12 | Pending |
+| OPS-03 | Phase 12 | Pending |
+| RET-01 | Phase 10 | Pending |
+| RET-02 | Phase 12 | Pending |
+| RET-03 | Phase 10 | Pending |
