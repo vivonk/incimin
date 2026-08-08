@@ -1,0 +1,22 @@
+{
+  "receiver": "incimin",
+  "status": "firing",
+  "alerts": [
+    {
+      "status": "firing",
+      "labels": {
+        "alertname": "PaymentServiceHighErrorRate",
+        "service.name": "paymentservice",
+        "severity": "critical"
+      },
+      "annotations": {
+        "summary": "Error rate 42% over 5m",
+        "description": "paymentservice 5xx rate exceeded the 5% threshold"
+      },
+      "startsAt": "2026-08-07T10:15:30.123456789Z",
+      "endsAt": "0001-01-01T00:00:00Z",
+      "generatorURL": "https://signoz.example/alerts/7",
+      "fingerprint": "abc123fingerprint"
+    }
+  ]
+}

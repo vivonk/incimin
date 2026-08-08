@@ -36,8 +36,32 @@ services:
       memgraph:
         condition: service_healthy
 
+  # Application state: incidents, agent step log, approvals, and (from phase 11)
+  # the LangGraph checkpointer tables. Distinct from SigNoz's own metastore Postgres,
+  # which is unpublished and internal to that stack.
+  postgres:
+    image: postgres:16
+    environment:
+      - POSTGRES_USER=incimin
+      - POSTGRES_PASSWORD=incimin
+      - POSTGRES_DB=incimin
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - incimin
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U incimin -d incimin"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    restart: unless-stopped
+
 volumes:
   memgraph_data:
+  postgres_data:
 
 networks:
   incimin:
