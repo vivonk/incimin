@@ -9,7 +9,6 @@ if not os.environ.get("ANTHROPIC_API_KEY"):
 from langchain_core.messages import AIMessage
 
 from src.agent.state import Synthesis
-from src.agent.subagents.knowledge import KnowledgeResult
 from src.agent.subagents.telemetry import TelemetryResult
 from src.agent.subagents.topology import TopologyResult
 
@@ -24,10 +23,6 @@ TELEMETRY_RESULT = TelemetryResult(
     evidence=[{"id": "telemetry-err-0", "source": "telemetry", "service": "paymentservice", "summary": "NullPointerException", "raw": {}, "timestamp": NOW_NS}],
     summary="Found 1 ERROR log(s) for paymentservice.",
 )
-KNOWLEDGE_RESULT = KnowledgeResult(
-    evidence=[{"id": "knowledge-0", "source": "knowledge", "service": "paymentservice", "summary": "paymentservice_crash.md", "raw": {"content": "1. Restart the paymentservice deployment."}, "timestamp": None}],
-    summary="Top match: paymentservice_crash.md (score=0.90).",
-)
 
 
 def tool_call_message(name, args, call_id):
@@ -35,30 +30,26 @@ def tool_call_message(name, args, call_id):
 
 
 class TestMetaAgentGraph(unittest.TestCase):
-    @patch("src.agent.tools.run_knowledge_subagent")
     @patch("src.agent.tools.run_telemetry_subagent")
     @patch("src.agent.tools.run_topology_subagent")
     @patch("src.agent.graph.synthesis_llm")
     @patch("src.agent.graph.llm_with_tools")
     def test_golden_path_finalizes_with_grounded_synthesis(
-        self, mock_llm_with_tools, mock_synthesis_llm, mock_topology, mock_telemetry, mock_knowledge
+        self, mock_llm_with_tools, mock_synthesis_llm, mock_topology, mock_telemetry
     ):
         from src.agent.graph import app
 
         mock_topology.return_value = TOPOLOGY_RESULT
         mock_telemetry.return_value = TELEMETRY_RESULT
-        mock_knowledge.return_value = KNOWLEDGE_RESULT
 
         mock_llm_with_tools.invoke.side_effect = [
             tool_call_message("topology_tool", {"source": "checkoutservice"}, "call-1"),
             tool_call_message("telemetry_tool", {}, "call-2"),
-            tool_call_message("knowledge_tool", {"query": "paymentservice crash"}, "call-3"),
             AIMessage(content="I have enough evidence."),
         ]
         mock_synthesis_llm.invoke.return_value = Synthesis(
             root_cause_service="paymentservice",
             evidence_refs=["topology-0", "telemetry-err-0"],
-            remediation_runbook_id="knowledge-0",
             confidence="high",
         )
 
@@ -71,27 +62,24 @@ class TestMetaAgentGraph(unittest.TestCase):
 
         final_message = result["messages"][-1]
         self.assertIn("paymentservice", final_message.content)
-        self.assertIn("Restart the paymentservice deployment", final_message.content)
+        self.assertIn("telemetry-err-0", final_message.content)
         self.assertTrue(result["verification_result"]["passed"])
 
-    @patch("src.agent.tools.run_knowledge_subagent")
     @patch("src.agent.tools.run_telemetry_subagent")
     @patch("src.agent.tools.run_topology_subagent")
     @patch("src.agent.graph.synthesis_llm")
     @patch("src.agent.graph.llm_with_tools")
     def test_ungrounded_synthesis_triggers_graceful_exit(
-        self, mock_llm_with_tools, mock_synthesis_llm, mock_topology, mock_telemetry, mock_knowledge
+        self, mock_llm_with_tools, mock_synthesis_llm, mock_topology, mock_telemetry
     ):
         from src.agent.graph import app
 
         mock_topology.return_value = TOPOLOGY_RESULT
         mock_telemetry.return_value = TELEMETRY_RESULT
-        mock_knowledge.return_value = KNOWLEDGE_RESULT
 
         mock_llm_with_tools.invoke.side_effect = [
             tool_call_message("topology_tool", {"source": "checkoutservice"}, "call-1"),
             tool_call_message("telemetry_tool", {}, "call-2"),
-            tool_call_message("knowledge_tool", {"query": "paymentservice crash"}, "call-3"),
             AIMessage(content="I have enough evidence."),
         ]
         # cartservice was never seen by topology or telemetry -> Verifier must fail closed.

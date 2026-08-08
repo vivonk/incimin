@@ -68,10 +68,6 @@ def _check_evidence_grounding(
             f"{mismatched_refs}."
         )
 
-    if synthesis.remediation_runbook_id and synthesis.remediation_runbook_id not in evidence_by_id:
-        failed.append("evidence_grounding")
-        details.append(f"remediation_runbook_id '{synthesis.remediation_runbook_id}' not found in evidence.")
-
 
 def _check_cross_modal_consistency(
     synthesis: Synthesis,

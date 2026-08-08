@@ -102,6 +102,29 @@ class AlertContext:
         """
         return self.fingerprint or f"{self.alertname}|{self.service}"
 
+    def to_kernel_alert(self) -> dict:
+        """Projection the v2 kernel reasons over.
+
+        The kernel does not read `to_prompt()`: grounding, hypothesis seeding and probe
+        selection all work off structured fields, not off a rendered prompt a model has to
+        parse back out. `fired_at_ns` in particular is load-bearing — the verifier's temporal
+        gate checks that a cause predates its alert, which v1 could not express because the
+        alert timestamp never reached graph state.
+        """
+        return {
+            "alertname": self.alertname,
+            "service": self.service or "",
+            "severity": self.severity or "unspecified",
+            "message": self.message,
+            "fired_at_ns": int(self.fired_at.timestamp() * 1e9),
+            "fingerprint": self.fingerprint,
+            "labels": dict(self.labels),
+            # Team ownership is a label today. Phase 15 replaces this with a lookup against
+            # `service_ownership`, at which point the label becomes an override rather than
+            # the only source.
+            "team": self.labels.get("team") or self.labels.get("owner"),
+        }
+
     def to_prompt(self) -> str:
         """The human turn given to the meta-agent: the alert text plus its metadata."""
         lines = [

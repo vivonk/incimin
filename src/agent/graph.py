@@ -1,6 +1,6 @@
 """Meta-agent (Coordinator) — Strategy A from MULTI_AGENT_ARCHITECTURE.md §5.
 
-Shape: agent (LLM, the only mandatory-LLM node) <-> tools (topology/telemetry/knowledge
+Shape: agent (LLM, the only mandatory-LLM node) <-> tools (topology/telemetry
 sub-agents) loop, then synthesize (LLM, structured output) -> verifier (deterministic,
 Layer 1 only per §6/§9) -> finalize (deterministic formatting) or graceful_exit.
 
@@ -16,15 +16,15 @@ from langgraph.prebuilt import ToolNode
 from src.agent.llm import build_llm
 from src.agent.state import SREAgentState, Synthesis
 from src.agent.subagents.verifier import verify
-from src.agent.tools import knowledge_tool, telemetry_tool, topology_tool
+from src.agent.tools import telemetry_tool, topology_tool
 
 llm = build_llm()
-tools = [topology_tool, telemetry_tool, knowledge_tool]
+tools = [topology_tool, telemetry_tool]
 llm_with_tools = llm.bind_tools(tools)
 synthesis_llm = build_llm().with_structured_output(Synthesis)
 
 COORDINATOR_SYSTEM_PROMPT = """You are the Coordinator of an SRE AI system. You do not query any \
-data source directly — you delegate to three specialist sub-agents via tools, then a separate \
+data source directly — you delegate to two specialist sub-agents via tools, then a separate \
 step synthesizes their findings and a deterministic Verifier checks your synthesis before it is \
 shown to a human.
 
@@ -32,9 +32,8 @@ Call sub-agents in this fixed order, ONE AT A TIME, waiting for each result befo
 next. Do not call more than one tool in the same turn:
 1. topology_tool — find candidate root-cause services from the service graph.
 2. telemetry_tool — check those candidates for error evidence.
-3. knowledge_tool — retrieve the matching runbook, once you know the likely service and symptom.
 
-Once you have called all three (or a tool's result makes further calls pointless), stop calling \
+Once you have called both (or a tool's result makes further calls pointless), stop calling \
 tools. You NEVER output or suggest remediation actions yourself — you only gather evidence \
 through these tools; a later step composes the final answer from what you gathered.
 """
@@ -72,8 +71,7 @@ def synthesize_node(state: SREAgentState):
         f"Candidate services (from topology traversal): {candidates}\n"
         f"Accumulated evidence:\n{evidence_listing}\n\n"
         "Produce a Synthesis: the single most likely root_cause_service, the evidence_refs "
-        "(evidence ids from the list above) that support it, the knowledge-sub-agent evidence id "
-        "to use as remediation_runbook_id (or null if none matches), and your confidence."
+        "(evidence ids from the list above) that support it, and your confidence."
     )
     try:
         synthesis = synthesis_llm.invoke(prompt)
@@ -97,12 +95,11 @@ def finalize_node(state: SREAgentState):
     evidence_by_id = {e["id"]: e for e in state.get("evidence", [])}
 
     lines = [f"Root cause: {synthesis.root_cause_service} (confidence: {synthesis.confidence})."]
-    runbook = evidence_by_id.get(synthesis.remediation_runbook_id) if synthesis.remediation_runbook_id else None
-    if runbook:
-        content = runbook["raw"].get("content", "")
-        lines.append(f"\nRecommended remediation (from {runbook['summary']}):\n{content}")
-    else:
-        lines.append("\nNo matching runbook was found; escalate to a human SRE for remediation steps.")
+    cited = [evidence_by_id[ref] for ref in synthesis.evidence_refs if ref in evidence_by_id]
+    if cited:
+        lines.append("\nSupporting evidence:")
+        lines.extend(f"- {e['id']} [{e['source']}] {e['summary']}" for e in cited)
+    lines.append("\nEscalate to a human SRE for remediation steps.")
 
     msg = AIMessage(content="\n".join(lines))
     return {"messages": [msg]}

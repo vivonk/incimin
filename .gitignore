@@ -9,3 +9,13 @@ dist/
 build/
 .mypy_cache/
 .ruff_cache/
+
+# GSD research tool cache — transient, not planning content
+.planning/research/.cache/
+
+node_modules/
+frontend/dist/
+.playwright-mcp/
+
+# MCP Inspector session captures — transient debug artifacts
+inspector-protocol-*.json

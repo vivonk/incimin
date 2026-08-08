@@ -1,5 +1,6 @@
 import streamlit as st
 import asyncio
+import uuid
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
 import sys
 import os
@@ -7,6 +8,7 @@ import os
 # Add src to python path so we can import modules
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
+from src.agent import tracing
 from src.agent.graph import app as agent_app
 
 st.set_page_config(page_title="Incimin.io AI SRE Agent", page_icon="🤖")
@@ -14,6 +16,11 @@ st.title("AI SRE Agent")
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
+
+# One Langfuse session per browser session, so a multi-turn investigation reads as one
+# conversation in the UI rather than as N disconnected traces.
+if "trace_session_id" not in st.session_state:
+    st.session_state.trace_session_id = f"ui-{uuid.uuid4().hex[:12]}"
 
 for msg in st.session_state.messages:
     if isinstance(msg, HumanMessage):
@@ -34,12 +41,19 @@ for msg in st.session_state.messages:
 def run_agent_sync(user_input, history):
     # Prepare state
     inputs = {"messages": history + [HumanMessage(content=user_input)], "remaining_steps": 10}
-    
+
+    config = tracing.trace_config(
+        "sre-agent:chat",
+        session_id=st.session_state.trace_session_id,
+        tags=["incimin-ui"],
+        metadata={"turn": len(history) // 2 + 1},
+    )
+
     # We use a wrapper to handle asyncio event loops to prevent collision with Streamlit's loop
     # stream_mode="updates" yields the state of the graph after each node
     def run_graph():
         updates = []
-        for update in agent_app.stream(inputs, stream_mode="updates"):
+        for update in agent_app.stream(inputs, stream_mode="updates", config=config):
             updates.append(update)
         return updates
 
@@ -52,13 +66,14 @@ def run_agent_sync(user_input, history):
         # But if the plan requires an async wrapper, we'll wrap astream instead.
         async def run_async_graph():
             updates = []
-            async for update in agent_app.astream(inputs, stream_mode="updates"):
+            async for update in agent_app.astream(inputs, stream_mode="updates", config=config):
                 updates.append(update)
             return updates
         updates = loop.run_until_complete(run_async_graph())
     finally:
         loop.close()
-    
+        tracing.flush()
+
     return updates
 
 if prompt := st.chat_input("Ask the AI SRE Agent..."):
@@ -109,7 +124,7 @@ if prompt := st.chat_input("Ask the AI SRE Agent..."):
                         with st.status("Coordinator: draft synthesis", state="complete"):
                             st.write(f"root_cause_service: {synthesis.root_cause_service}")
                             st.write(f"evidence_refs: {synthesis.evidence_refs}")
-                            st.write(f"remediation_runbook_id: {synthesis.remediation_runbook_id}")
+                            st.write(f"evidence_refs: {synthesis.evidence_refs}")
                             st.write(f"confidence: {synthesis.confidence}")
                 elif node_name == "verifier":
                     vr = state_update.get("verification_result")

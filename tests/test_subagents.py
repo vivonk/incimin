@@ -1,7 +1,6 @@
 import unittest
 from unittest.mock import MagicMock, patch
 
-from src.agent.subagents.knowledge import RerankSelection, run_knowledge_subagent
 from src.agent.subagents.telemetry import EscalationDecision, run_telemetry_subagent
 from src.agent.subagents.topology import run_topology_subagent
 
@@ -146,56 +145,6 @@ class TestTelemetrySubagent(unittest.TestCase):
         result = run_telemetry_subagent(["paymentservice"])
 
         self.assertIn("Error executing telemetry query", result.summary)
-
-
-class TestKnowledgeSubagent(unittest.TestCase):
-    @patch("src.agent.subagents.knowledge.build_llm")
-    @patch("src.agent.subagents.knowledge.TextEmbedding")
-    @patch("src.agent.subagents.knowledge.QdrantClient")
-    def test_high_confidence_match_skips_llm(self, mock_qdrant, mock_embed, mock_build_llm):
-        mock_client = MagicMock()
-        mock_qdrant.return_value = mock_client
-        mock_embed.return_value.embed.return_value = [MagicMock(tolist=lambda: [0.1, 0.2])]
-
-        mock_point = MagicMock(payload={"filename": "paymentservice_crash.md", "content": "restart"}, score=0.9)
-        mock_client.query_points.return_value = MagicMock(points=[mock_point])
-
-        result = run_knowledge_subagent("payment crash")
-
-        self.assertEqual(len(result.evidence), 1)
-        self.assertEqual(result.evidence[0]["service"], "paymentservice")
-        mock_build_llm.assert_not_called()
-
-    @patch("src.agent.subagents.knowledge.build_llm")
-    @patch("src.agent.subagents.knowledge.TextEmbedding")
-    @patch("src.agent.subagents.knowledge.QdrantClient")
-    def test_low_confidence_triggers_rerank(self, mock_qdrant, mock_embed, mock_build_llm):
-        mock_client = MagicMock()
-        mock_qdrant.return_value = mock_client
-        mock_embed.return_value.embed.return_value = [MagicMock(tolist=lambda: [0.1, 0.2])]
-
-        points = [
-            MagicMock(payload={"filename": "a.md", "content": "a"}, score=0.2),
-            MagicMock(payload={"filename": "b.md", "content": "b"}, score=0.1),
-        ]
-        mock_client.query_points.return_value = MagicMock(points=points)
-
-        mock_structured = MagicMock()
-        mock_structured.invoke.return_value = RerankSelection(selected_ids=["knowledge-1"], reason="b fits better")
-        mock_build_llm.return_value.with_structured_output.return_value = mock_structured
-
-        result = run_knowledge_subagent("ambiguous query")
-
-        self.assertEqual(len(result.evidence), 1)
-        self.assertEqual(result.evidence[0]["id"], "knowledge-1")
-
-    @patch("src.agent.subagents.knowledge.QdrantClient")
-    def test_connection_error(self, mock_qdrant):
-        mock_qdrant.side_effect = Exception("Qdrant connection failed")
-
-        result = run_knowledge_subagent("crash")
-
-        self.assertIn("Error executing knowledge query", result.summary)
 
 
 if __name__ == "__main__":

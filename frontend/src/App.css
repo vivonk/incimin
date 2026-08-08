@@ -1,0 +1,216 @@
+:root {
+  --bg: #0f1115;
+  --panel: #161a21;
+  --line: #252b36;
+  --text: #e6e9ef;
+  --dim: #8b94a7;
+  --crit: #f0616d;
+  --warn: #e0a33a;
+  --info: #4a9de0;
+  --ok: #3fb27f;
+  --run: #4a9de0;
+  --wait: #c98bdb;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.app { max-width: 1100px; margin: 0 auto; padding: 32px 24px; }
+
+.bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+  margin-bottom: 20px;
+}
+
+h1 {
+  font-size: 20px;
+  font-weight: 600;
+  margin: 0;
+  letter-spacing: -0.01em;
+  flex: 0 0 auto;
+}
+
+.filters { display: flex; gap: 8px; flex: 0 1 auto; }
+
+select, button {
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font: inherit;
+  max-width: 190px;
+}
+
+/* Native selects render their popup with the OS palette, so an inherited dark
+   `color` leaves the options dark-on-dark and effectively invisible. Set both
+   explicitly on the option rather than relying on inheritance. */
+select option {
+  background: #1b2029;
+  color: var(--text);
+}
+
+button { cursor: pointer; }
+button:hover:not(:disabled) { border-color: #3a4354; }
+button:disabled { opacity: 0.6; cursor: default; }
+
+table { width: 100%; border-collapse: collapse; }
+
+th {
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--dim);
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+td { padding: 12px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+
+tbody tr:hover { background: var(--panel); }
+
+.pill {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  background: #222834;
+  color: var(--dim);
+}
+
+.s-agent_running,
+.s-executing_remediation { background: rgba(74, 157, 224, 0.16); color: var(--run); }
+.s-awaiting_approval     { background: rgba(201, 139, 219, 0.16); color: var(--wait); }
+.s-done                  { background: rgba(63, 178, 127, 0.16); color: var(--ok); }
+.s-failed,
+.s-orphaned              { background: rgba(240, 97, 109, 0.16); color: var(--crit); }
+
+.step {
+  margin-left: 8px;
+  font-size: 12px;
+  color: var(--dim);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.sev { font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.03em; }
+.sev-critical { color: var(--crit); }
+.sev-warning  { color: var(--warn); }
+.sev-info     { color: var(--info); }
+.sev-none     { color: var(--dim); }
+
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.dim { color: var(--dim); }
+.empty { text-align: center; color: var(--dim); padding: 32px; }
+.error { color: var(--crit); background: rgba(240, 97, 109, 0.1); padding: 10px 12px; border-radius: 6px; }
+
+/* -- detail panel ------------------------------------------------------ */
+
+.row { cursor: pointer; }
+.row.sel { background: var(--panel); }
+.detail-row td { padding: 0; background: #12151b; }
+
+.detail { border-top: 1px solid var(--line); }
+
+.tabs { display: flex; gap: 2px; padding: 8px 12px 0; border-bottom: 1px solid var(--line); }
+
+.tab {
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  padding: 8px 14px;
+  color: var(--dim);
+  font: inherit;
+  cursor: pointer;
+}
+.tab:hover { color: var(--text); }
+.tab.on { color: var(--text); border-bottom-color: var(--info); }
+
+.pad { padding: 16px 20px 22px; }
+
+.detail h3 {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--dim);
+  margin: 20px 0 8px;
+}
+
+.kv {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 16px;
+  align-items: baseline;
+}
+.kv span { color: var(--dim); font-size: 13px; }
+
+table.inner { margin-top: 4px; }
+table.inner th { padding: 6px 10px; }
+table.inner td { padding: 7px 10px; border-bottom: 1px solid #1d222b; }
+tr.refuted { opacity: 0.5; text-decoration: line-through; }
+
+/* Named `.posterior`, not `.bar` — `.bar` is the page header, and a second rule
+   with that name silently reshaped the header into a 120x18 box and absolutely
+   positioned its children on top of the title. */
+.posterior { position: relative; width: 120px; height: 18px; background: #1d222b; border-radius: 3px; }
+.posterior > div { position: absolute; inset: 0 auto 0 0; background: rgba(74, 157, 224, 0.45); border-radius: 3px; }
+.posterior > span { position: relative; padding-left: 6px; font-size: 12px; font-variant-numeric: tabular-nums; }
+
+ul.plain { list-style: none; margin: 0; padding: 0; }
+ul.plain li { padding: 4px 0; border-bottom: 1px solid #1d222b; }
+
+.answer {
+  background: #12151b;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 12px;
+  margin: 0;
+  max-height: 340px;
+  overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  color: #c8cedb;
+}
+
+.ok  { color: var(--ok); font-weight: 600; }
+.bad { color: var(--crit); font-weight: 600; }
+
+/* -- step graph -------------------------------------------------------- */
+
+.graph { height: 460px; border-top: 1px solid var(--line); }
+
+.gnode {
+  width: 190px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--dim);
+  border-radius: 5px;
+  background: var(--panel);
+  font-size: 12px;
+}
+.gnode-label { font-weight: 600; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.gnode-sub { color: var(--dim); font-size: 11px; margin-top: 1px; }
+
+.k-node        { border-left-color: var(--info); }
+.k-tool_result { border-left-color: var(--ok); }
+.k-tool_call   { border-left-color: var(--warn); }
+.k-gate        { border-left-color: var(--wait); }
+.st-error      { border-left-color: var(--crit); }
+
+.react-flow__handle { opacity: 0; }
+.react-flow__edge-path { stroke: #303845; }

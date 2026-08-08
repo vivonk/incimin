@@ -1,6 +1,6 @@
 # incimin.io — AI SRE Agent
 
-Autonomous AI SRE agent that performs real-time, deterministic root-cause analysis during infrastructure incidents. Traverses the live service graph (Memgraph), queries correlated telemetry (SigNoz/ClickHouse), and retrieves runbooks (Qdrant) to deliver root cause and remediation before a human opens a dashboard.
+Autonomous AI SRE agent that performs real-time, deterministic root-cause analysis during infrastructure incidents. Traverses the live service graph (Memgraph) and queries correlated telemetry (SigNoz/ClickHouse) to deliver a root cause before a human opens a dashboard.
 
 ## Prerequisites
 
@@ -24,7 +24,7 @@ docker network create incimin || true
 docker compose up -d
 ```
 
-This starts: Memgraph + MAGE, Qdrant, SigNoz (OTel Collector + ClickHouse + UI), and the OTel Astronomy Shop (14-service demo app).
+This starts: Memgraph + MAGE, SigNoz (OTel Collector + ClickHouse + UI), and the OTel Astronomy Shop (14-service demo app).
 
 ## Verify the stack
 
@@ -32,7 +32,7 @@ This starts: Memgraph + MAGE, Qdrant, SigNoz (OTel Collector + ClickHouse + UI),
 uv run python scripts/verify_stack.py
 ```
 
-All 14 checks should show `PASS`.
+All 13 checks should show `PASS`.
 
 ## Running the production system
 
@@ -85,7 +85,6 @@ uv run pytest
 |---------|------|-----|
 | Memgraph Bolt | 7687 | `bolt://localhost:7687` |
 | Memgraph Lab (UI) | 3000 | http://localhost:3000 |
-| Qdrant | 6333 | http://localhost:6333 |
 | SigNoz UI | 3301 | http://localhost:3301 |
 | ClickHouse HTTP | 8123 | http://localhost:8123 |
 | OTel Collector (gRPC) | 4317 | — |
@@ -95,8 +94,15 @@ uv run pytest
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `ANTHROPIC_API_KEY` | — | **Required.** The agent's chat model |
+| `ANTHROPIC_MODEL` | `claude-sonnet-5` | Override the model |
+| `LLM_TIMEOUT` | `120` | Seconds per LLM call |
 | `SIGNOZ_API_URL` | `http://localhost:3301` | SigNoz query service base URL |
 | `SIGNOZ_API_TOKEN` | — | SigNoz API token (optional for local) |
+
+The agent is **Anthropic-only**. The former `LLM_PROVIDER` switch (gemini, openrouter) was
+removed — a deterministic golden path cannot depend on which of three providers happens to be
+configured. A leftover `LLM_PROVIDER` in `.env` is ignored with a warning, not an error.
 
 Copy `.env.example` (if present) or export directly:
 
@@ -104,11 +110,54 @@ Copy `.env.example` (if present) or export directly:
 export SIGNOZ_API_URL=http://localhost:3301
 ```
 
+### Agent tracing (Langfuse)
+
+Every agent run — the Coordinator's tool-calling loop, the synthesis step, and the LLM calls
+the sub-agents make inside their tools — is exported to [Langfuse](https://langfuse.com) as a
+single trace when credentials are present.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LANGFUSE_PUBLIC_KEY` | — | Enables tracing (with the secret key). Absent → tracing is off |
+| `LANGFUSE_SECRET_KEY` | — | Enables tracing (with the public key) |
+| `LANGFUSE_BASE_URL` | `https://cloud.langfuse.com` | Langfuse host; use this for self-hosted |
+| `LANGFUSE_HOST` | — | Legacy alias for `LANGFUSE_BASE_URL` |
+| `LANGFUSE_TRACING_ENABLED` | `true` | Set `false` to disable without removing the keys |
+| `LANGFUSE_VERIFY_SSL` | `true` | Set `false` behind a TLS-intercepting corporate proxy |
+
+**Tracing is optional and fails open.** Missing keys, an unreachable host, or an uninstalled
+package each degrade to an untraced run with one log line — never a failed incident triage.
+
+Confirm the wiring before you need it:
+
+```bash
+uv run python scripts/verify_langfuse.py
+```
+
+It checks credentials → handler → auth → real trace delivery, stopping at the first failure,
+and emits one span tagged `incimin-verify` that is safe to delete from the Langfuse UI.
+
+How runs are grouped in the UI:
+
+| Entry point | Trace name | Session |
+|-------------|-----------|---------|
+| Incident API (`src/api/runner.py`) | `sre-alert:{alertname}` | Alert fingerprint — every Alertmanager resend of one incident groups together |
+| Streamlit UI (`src/ui/app.py`) | `sre-agent:chat` | One per browser session, so a multi-turn investigation reads as one conversation |
+
 ## Project layout
 
 ```
+src/api/                     # Incident dashboard API
+  main.py                    # FastAPI: POST /webhook/signoz + incident REST
+  schema.sql                 # Postgres DDL, applied idempotently at startup
+  db.py                      # psycopg3 pool + checkpointer setup
+  repository.py              # parameterized data access
+  runner.py                  # background agent run + step recording
+frontend/                    # Vite + React dashboard (dev :5173)
+src/agent/kernel/            # v2 hypothesis-tournament loop
+src/agent/probes/            # evidence probes (logs, changes)
 src/production/
-  main.py                    # FastAPI webhook ingestion API
+  main.py                    # FastAPI deploy/PR ingestion + MCP SSE
   db.py                      # ClickHouse + Memgraph persistence
   topology/
     models.py                # ServiceNode, ServiceEdge (Pydantic + entity metadata)
@@ -116,11 +165,11 @@ src/production/
     manager.py               # TopologyManager plugin registry
     plugins/signoz.py        # SigNoz topology provider
 scripts/
-  verify_stack.py            # 14-check infrastructure gate
-  init_qdrant.py             # Seed runbooks into Qdrant
+  verify_stack.py            # 13-check infrastructure gate
+  init_memgraph.py           # Seed the service topology into Memgraph
   check_tele.py              # Telemetry query smoke test
 docker/
-  compose.core.yaml          # Memgraph + Qdrant
+  compose.core.yaml          # Memgraph + Memgraph Lab
   compose.signoz.yaml        # SigNoz stack
   compose.otel-demo.yaml     # OTel Astronomy Shop
 ```

@@ -9,11 +9,11 @@ class Evidence(TypedDict):
     """A single fact produced by a sub-agent. The unit every downstream check operates on."""
 
     id: str
-    source: Literal["topology", "telemetry", "knowledge"]
+    source: Literal["topology", "telemetry"]
     service: str
     summary: str
     raw: dict
-    timestamp: int | None  # nanosecond epoch; telemetry only, None for topology/knowledge
+    timestamp: int | None  # nanosecond epoch; telemetry only, None for topology
 
 
 class Synthesis(BaseModel):
@@ -25,7 +25,6 @@ class Synthesis(BaseModel):
 
     root_cause_service: str
     evidence_refs: list[str] = Field(default_factory=list)
-    remediation_runbook_id: str | None = None
     confidence: Literal["high", "low"] = "low"
 
 

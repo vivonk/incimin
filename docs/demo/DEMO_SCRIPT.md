@@ -35,18 +35,17 @@
    - The agent will autonomously:
      1. Traverse the topology in Memgraph.
      2. Query SigNoz/ClickHouse telemetry for `ERROR` logs related to the affected services.
-     3. Search Qdrant for the relevant runbook.
    - The agent should complete these steps within 60 seconds.
 
 5. **Final Output:**
-   - The agent will display a root cause summary.
-   - It will provide the recommended remediation steps from the runbook (specifically mentioning `paymentservice`).
+   - The agent will display a root cause summary (specifically naming `paymentservice`).
+   - It will list the supporting topology and telemetry evidence behind that claim.
 
 ## Pitfalls Verification Sign-off
 
 The following critical risks have been addressed and validated during development:
 
-- [x] **Port collisions:** All service ports are mapped to avoid conflicts with local developer tools (e.g., ClickHouse on 8123, Qdrant on 6333, Memgraph on 7687).
+- [x] **Port collisions:** All service ports are mapped to avoid conflicts with local developer tools (e.g., ClickHouse on 8123, Memgraph on 7687).
 - [x] **Memgraph persistence:** Memgraph volumes are properly mounted, ensuring topology data survives container restarts.
 - [x] **Nanosecond timestamps:** ClickHouse queries correctly handle OpenTelemetry's nanosecond timestamp formats in `signoz_logs.distributed_logs_v2`.
 - [x] **Recursion guard:** The LangGraph state machine uses a `remaining_steps` limit to prevent infinite loops.

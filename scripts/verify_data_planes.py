@@ -2,9 +2,6 @@ import sys
 import time
 from gqlalchemy import Memgraph
 import clickhouse_connect
-from qdrant_client import QdrantClient
-from qdrant_client.models import Filter, FieldCondition, MatchValue
-from fastembed import TextEmbedding
 
 def get_memgraph_with_retry(host="127.0.0.1", port=7687, retries=10, delay=2):
     for i in range(retries):
@@ -58,60 +55,10 @@ def check_tele_01():
     result = client.query(query, parameters=parameters)
     # Just verifying query execution with nanosecond timestamps succeeds
 
-def check_know_01():
-    client = QdrantClient("http://127.0.0.1:6333", timeout=30.0)
-    embedding_model = TextEmbedding("BAAI/bge-small-en-v1.5")
-    
-    tests = [
-        ("Payment service is crashing", "paymentservice_crash.md"),
-        ("Users are abandoning carts due to slowness", "checkoutservice_high_latency.md"),
-        ("Storefront is showing 500 internal server error", "frontendservice_5xx_errors.md")
-    ]
-    
-    for query, expected_filename in tests:
-        query_vector = list(embedding_model.embed([query]))[0].tolist()
-        
-        results = client.query_points(
-            collection_name="runbooks",
-            query=query_vector,
-            limit=1
-        ).points
-        
-        if not results:
-            raise Exception(f"No runbook found for query: {query}")
-            
-        retrieved_filename = results[0].payload["filename"]
-        if retrieved_filename != expected_filename:
-            raise Exception(f"Wrong runbook retrieved for '{query}'. Expected {expected_filename}, got {retrieved_filename}")
-
-def check_know_02():
-    client = QdrantClient("http://127.0.0.1:6333", timeout=30.0)
-    embedding_model = TextEmbedding("BAAI/bge-small-en-v1.5")
-    query_vector = list(embedding_model.embed(["crash"]))[0].tolist()
-    
-    filter_results = client.query_points(
-        collection_name="runbooks",
-        query=query_vector,
-        query_filter=Filter(
-            must=[
-                FieldCondition(
-                    key="filename",
-                    match=MatchValue(value="paymentservice_crash.md")
-                )
-            ]
-        ),
-        limit=1
-    ).points
-    
-    if not filter_results or filter_results[0].payload["filename"] != "paymentservice_crash.md":
-        raise Exception("Payload filter test failed.")
-
 CHECKS = [
     ("TOPO-01", check_topo_01),
     ("TOPO-02", check_topo_02),
     ("TELE-01", check_tele_01),
-    ("KNOW-01", check_know_01),
-    ("KNOW-02", check_know_02),
 ]
 
 def main():

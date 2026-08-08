@@ -1,322 +1,267 @@
 # Pitfalls Research
 
-**Domain:** AI SRE agent — LangGraph + Memgraph + SigNoz/ClickHouse + Qdrant on Docker Compose
-**Researched:** 2026-08-05
-**Confidence:** HIGH (all critical items verified against official docs, source code, or confirmed GitHub issues)
+**Domain:** Adding Postgres persistence, LangGraph HITL interrupts, SSE live updates, a React step-graph SPA, and gated remediation execution to an existing threading-based webhook + no-checkpointer LangGraph agent.
+**Researched:** 2026-08-08
+**Confidence:** HIGH (LangGraph interrupt semantics, Alertmanager delivery semantics, Postgres ON CONFLICT pattern, asyncio task GC — all confirmed against current docs/issues; MEDIUM on SSE/React Flow specifics, which are well-documented community patterns rather than versioned API guarantees)
 
----
+**Grounded against this repo:** `src/webhook/app.py` (in-memory `_recent: dict` dedupe under a `threading.Lock`, `threading.Thread(target=run_alert, ...).start()` fire-and-forget per alert), `src/webhook/alert.py` (`dedupe_key = fingerprint or f"{alertname}|{service}"`, RFC3339-nanosecond `parse_time`, `0001-01-01` zero-value handling), `src/production/db.py` (`_insert_ch` builds a Python source string via f-string and runs it with `subprocess.run([sys.executable, "-c", code])` — arbitrary code execution, not just SQL injection, if any interpolated value contains a quote; `merge_deployment_event`'s Cypher also f-string-interpolates `now_str` and UUIDs directly into the query body instead of using the `$repo`/`$service` params it already has available), `src/production/mcp_server.py` (ClickHouse queries built with f-strings at lines ~50, ~70).
 
 ## Critical Pitfalls
 
-### Pitfall 1: SigNoz Port 8080 Collision with OTel Demo Frontend
+### Pitfall 1: Node code before `interrupt()` re-runs verbatim on resume
 
 **What goes wrong:**
-SigNoz Foundry (the current supported install method, replacing the deprecated `deploy/` Compose files as of v0.130.0) runs its UI on port 8080. The OTel Astronomy Shop's Envoy frontend-proxy also binds to host port 8080. Both cannot bind simultaneously. The stack silently fails to start one of them.
+`interrupt()` does not suspend mid-function and resume from that line — on resume, LangGraph replays the **entire node from its start**, using the checkpointed state for everything already produced by *earlier* nodes, but re-executing every line of the interrupted node itself, including any side effect that ran before the `interrupt()` call. If the approval node writes an `approvals` row, calls an external API, or increments a counter before pausing, that write happens again on resume — and again on a second resume if the human clicks stale UI twice.
 
 **Why it happens:**
-The old SigNoz Docker Compose used port 3301 for its UI. The new Foundry-based deployment changed to 8080. Anyone working from old tutorials or training data will miss this. The OTel demo's `.env` hardcodes `ENVOY_PORT=8080`.
+Durable execution in LangGraph is implemented by checkpointing graph *state*, not *program counters* — there's no continuation to resume into. Developers coming from generator/coroutine mental models (`await` suspends in place) assume the same for `interrupt()`, which does not hold. This is a documented, current gotcha in the LangGraph interrupts docs and issue tracker, not a version-specific bug.
 
 **How to avoid:**
-In the SigNoz casting.yaml, override the UI port to 3301 (or any unused port). In the OTel demo `.env`, change `ENVOY_PORT` to 8090. Assign ports explicitly in the master `docker-compose.override.yml` that glues all stacks together. Audit all port bindings before Day 1 build starts using `docker ps --format "{{.Ports}}"`.
+- Put `interrupt()` as the **first statement** in the node (or in its own single-purpose node) — no side effects before it, ever.
+- Any side effect that must happen exactly once per approval (writing the audit row, calling the remediation executor) belongs strictly **after** the `interrupt()` call returns, in the same node, gated on the resume value — never before.
+- Make the pre-interrupt read path itself idempotent (pure reads from state/DB, no writes) so replay is a no-op.
+- Do not wrap `interrupt()` in try/except — LangGraph raises `GraphInterrupt` internally to unwind the node, and swallowing it breaks the pause.
 
-**Warning signs:**
-`bind: address already in use` errors during `docker compose up`. One service starts but shows connection refused at the expected URL. Running `lsof -i :8080` shows two competing processes.
+**Warning signs:** duplicate rows in the audit table per single approval click; the remediation command executed twice; a Langfuse trace showing the same tool call twice around one interrupt.
 
-**Phase to address:** Phase 1 (Infrastructure Setup) — resolve all port assignments before any other work begins.
-
-**Demo risk:** During a live demo, if the presenter switches browser tabs between SigNoz and the OTel demo frontend, only one will load. If not pre-tested on the exact demo machine, this kills the demo.
+**Phase to address:** Phase 11 (agent HITL gates) — enforce as a structural rule when writing the approval node: `interrupt()` first, side effects after.
 
 ---
 
-### Pitfall 2: OTel Demo Telemetry Does Not Reach SigNoz Without Explicit Pipeline Configuration
+### Pitfall 2: Compiling the graph without `.setup()` on `AsyncPostgresSaver`, or without a checkpointer at all
 
 **What goes wrong:**
-The OTel Astronomy Shop has its own internal OTel Collector (`otel-collector` service). By default, this collector exports to Jaeger and OpenSearch (its bundled observability stack), not to SigNoz. Simply running both stacks side-by-side produces zero telemetry in SigNoz.
+The graph currently compiles with `app = builder.compile()` and no checkpointer (per PROJECT.md decision log: "The graph previously compiled with no checkpointer, so a pause could not survive a restart"). Two distinct failure modes when adding durability: (1) forgetting to call `await checkpointer.setup()` once before first use — `AsyncPostgresSaver` needs its own tables (`checkpoints`, `checkpoint_writes`, etc.) created in the Postgres DB, and skipping this raises a runtime error the first time `interrupt()` tries to persist state, not at startup; (2) compiling with a checkpointer but the webhook's `threading.Thread(target=run_alert, ...)` fire-and-forget pattern means the response object/websocket handle from that request is gone by the time a human approves — resume must happen via a *separate* request path keyed by `thread_id`, not by holding the original call open.
 
-**Why it happens:**
-The OTel demo's `compose.observability.yaml` overlays configure exporters for Jaeger/Prometheus/OpenSearch only. The OTel Collector config merge behavior (documented in `otelcol-config-observability.yml`) **replaces** arrays rather than appending, so adding a SigNoz exporter requires explicitly repeating all existing exporters in the new config layer. Most teams assume the OTel demo "just sends telemetry" to any OTel endpoint they stand up.
+**Why it happens:** `.setup()` is a manual migration step, easy to treat as one-time and then forget in a fresh environment (new dev machine, CI, redeployed container with an empty DB). The threading pattern predates checkpointing and was designed around "run and forget," which is structurally incompatible with "pause and wait for a second, unrelated HTTP request."
 
 **How to avoid:**
-Create a custom `otelcol-config-signoz.yml` that adds a `otlp_grpc/signoz` exporter pointing to `signoz-otel-collector:4317` and re-declares all pipelines with all required exporters. Mount this as an additional `--config` layer. Verify telemetry arrives in SigNoz within 5 minutes of startup using the SigNoz Services page before writing any agent code.
+- Run `checkpointer.setup()` idempotently on app startup (FastAPI lifespan), not as a separate manual script — `CREATE TABLE IF NOT EXISTS` semantics inside `setup()` make repeated calls safe.
+- Replace the fire-and-forget `threading.Thread` invocation entirely for graphs with interrupts: the webhook handler starts the run and returns immediately with a `thread_id`; a *separate* `/approvals/{id}/decide` endpoint resumes the same `thread_id` via `Command(resume=...)`. The original thread's Python call stack is gone — resume must reconstruct via checkpointer state, not via any in-memory reference.
+- Use one `thread_id` per alert (e.g., derived from the alert's Postgres primary key or fingerprint, not a random UUID per run) so a duplicate webhook delivery resumes/observes the same run instead of starting a second graph over the same incident.
 
-**Warning signs:**
-SigNoz Services page shows no services after 10+ minutes of the OTel demo running. ClickHouse `distributed_logs_v2` table returns zero rows. No traces visible in SigNoz Trace Explorer.
+**Warning signs:** `asyncpg.exceptions.UndefinedTableError` on first interrupt in a new environment; approvals that "disappear" because the resume call targets a `thread_id` nothing was ever checkpointed under.
 
-**Phase to address:** Phase 1 (Infrastructure Setup) — telemetry pipeline must be proven end-to-end before Phase 2 begins.
-
-**Demo risk:** The entire demo narrative depends on the agent finding logs for the `paymentservice`. If no telemetry reaches SigNoz, the agent returns empty results and the RCA fails silently. This is an invisible failure unless you pre-test.
+**Phase to address:** Phase 10 (persistence + API) — `.setup()` belongs in the same migration/bootstrap step as the alerts and audit tables. Phase 11 (HITL gates) — the resume-via-separate-request architecture is the core design decision for that phase.
 
 ---
 
-### Pitfall 3: ClickHouse Timestamp Is in Nanoseconds, Not Milliseconds
+### Pitfall 3: In-memory dedupe dict cannot survive concurrency or restarts — replace with a Postgres partial unique index
 
 **What goes wrong:**
-The agent's ClickHouse log query tool constructs dynamic SQL with time range filters. If the timestamp comparison uses Unix milliseconds (Python's `datetime.timestamp() * 1000`), zero rows are returned because SigNoz's `distributed_logs_v2.timestamp` column stores nanoseconds. The query succeeds with no error but returns empty results.
+`src/webhook/app.py`'s `_recent: dict[str, float]` under `threading.Lock` has three faults once alerts must be durable: (1) it's per-process — restart the FastAPI process (or run two replicas) and every in-flight suppression window resets, so a redelivered Alertmanager alert that arrives right after a restart is treated as new; (2) check-then-act is not atomic across the *webhook boundary* even though the Python lock makes the dict update atomic — two near-simultaneous deliveries of the same fingerprint (Alertmanager's own retry-on-non-2xx behavior, or two Alertmanager replicas both notifying) can both pass `_is_duplicate()` before either has inserted a durable row, if the durable insert happens after the check rather than being the check; (3) `WEBHOOK_DEDUPE_SECONDS` (default 300) is a *time window* heuristic standing in for what should be a hard identity constraint — Alertmanager's `repeat_interval` is often 4h+, so an alert that legitimately re-fires 6 minutes after the window closes is treated as new, doubling the agent run for a still-ongoing incident.
 
-**Why it happens:**
-Confirmed in SigNoz source: `NANOSECOND = 1000000000` is the conversion constant applied to input timestamps. The column is `timestamp` (not `timestamp_ns`), but its values are nanosecond-epoch integers. Python's `time.time()` returns seconds; multiplying by 1e3 gives milliseconds, but the correct multiplier is 1e9.
+**Why it happens:** the in-memory dict was correct for the pre-persistence design (webhook only trigger agent runs, nothing durable to protect). Moving to Postgres-backed alerts without revisiting dedupe just adds a second, disagreeing source of truth.
 
 **How to avoid:**
-Standardize all time generation in the agent tools to: `int(time.time() * 1e9)`. Add a unit test asserting that a query for the last 5 minutes against the live ClickHouse returns at least one row. Use `ts_bucket_start` in the WHERE clause alongside `timestamp` (SigNoz query builder uses both for primary key optimization).
+- Give the `alerts` table a unique (or partial unique) index on the Alertmanager `fingerprint` (already computed as `AlertContext.dedupe_key`), and make the insert path `INSERT ... ON CONFLICT (fingerprint) DO NOTHING RETURNING id` (or `DO UPDATE ... RETURNING id` if a resend should refresh `last_seen_at`/status). The `RETURNING` clause is the atomic duplicate signal — no rows returned means "already existed," decided entirely inside Postgres, immune to the two-replica/two-thread race that a check-then-insert (or a Python dict) cannot close.
+- Treat the fingerprint-less fallback (`f"{alertname}|{service}"` in `AlertContext.dedupe_key`) as a second unique constraint column combination, since not every alert source guarantees a fingerprint.
+- Keep a short in-memory guard only as a *pre-filter* to avoid hitting Postgres for an obvious immediate double-POST (e.g., a proxy retry within milliseconds) — never as the source of truth for whether the agent already ran.
+- Decide new-run-vs-same-run explicitly: a resend of a `firing` alert under the same fingerprint while a run is `in_progress`/`awaiting_approval` should attach to the existing row and thread_id, not spawn a second agent run.
 
-**Warning signs:**
-Queries that target recent time windows return 0 rows. The same query with no time filter returns rows. Manually running `SELECT max(timestamp) FROM signoz_logs.distributed_logs_v2` returns a large integer (~1.7e18).
+**Warning signs:** two duplicate rows for the same fingerprint appearing only under load (never in solo manual testing — this is a race that needs concurrent delivery to manifest); an incident's Langfuse session (currently keyed off `dedupe_key`) showing two unrelated agent runs.
 
-**Phase to address:** Phase 2 (Agent Tool: ClickHouse log query) — validate the timestamp unit explicitly.
-
-**Demo risk:** Empty log results make the agent's RCA narrative incomplete. The agent will synthesize a root cause without supporting log evidence, potentially hallucinating or producing a weak answer during the live demo.
+**Phase to address:** Phase 10 (persistence + API) — this is the schema/insert-path design; get the constraint and `ON CONFLICT` clause right before anything depends on `alerts.id` being unique per incident.
 
 ---
 
-### Pitfall 4: LangGraph Agent Loops Indefinitely When Tools Return Empty Results
+### Pitfall 4: SQL/Cypher built via f-string interpolation — an established bad habit in this repo that must not migrate into the new Postgres layer
 
 **What goes wrong:**
-When the ClickHouse query returns zero rows (wrong time range, wrong service name) or the Qdrant search finds no matching runbook, the LLM re-invokes tools in a retry loop rather than terminating. With the default `recursion_limit=25`, the graph hits `GraphRecursionError` mid-demo — which surfaces as an exception traceback in the Streamlit UI.
+`src/production/db.py::_insert_ch` builds a *Python source string* via f-string (`code = f"""...client.command('''{query}''')..."""`) and executes it with `subprocess.run([sys.executable, "-c", code])` — this is worse than SQL injection: any interpolated value containing `'''` or backslash-quote sequences breaks out of the ClickHouse query string *and* the embedding Python string, achieving arbitrary code execution in a subprocess, not just an unintended query. `merge_deployment_event` in the same file f-string-interpolates `now_str`, `repo_ext_id`, `svc_ext_id`, `rel_ext_id` directly into Cypher text even though the function *already* passes `repo`/`service` as bound Neo4j params two lines later — it inconsistently parameterizes some values and inlines others. `src/production/mcp_server.py` builds ClickHouse queries the same f-string way. This pattern predates v1.7, and the new Postgres alert/audit/checkpoint tables are the highest-value place it must not reappear, since they'll carry the raw webhook JSONB payload and free-text alert messages/annotations (attacker- or upstream-service-controlled strings) directly into SQL.
 
-**Why it happens:**
-Standard ReAct behavior: the LLM interprets empty tool results as a reason to try different queries. Without a hard termination condition (or proactive `RemainingSteps` monitoring), the agent will cycle through tool variants until the recursion limit. `GraphRecursionError` is raised as an uncaught exception if not wrapped.
+**Why it happens:** f-string query building looks identical to parameterized calls at a glance, and Python's ORMs/drivers all accept raw strings, so nothing forces the safer path. It's fastest to write and works fine until a value contains a quote, apostrophe, or (in `_insert_ch`'s case) a triple-quote sequence.
 
 **How to avoid:**
-Set `recursion_limit=10` (sufficient for a 3-tool deterministic RCA). Implement a proactive `RemainingSteps` guard node that routes to a graceful "insufficient data" response when `remaining_steps <= 2`. Wrap `graph.invoke()` in a `try/except GraphRecursionError` at the Streamlit layer with a user-visible error message. Tool return types must include an empty-result signal (e.g., `{"rows": [], "status": "no_data"}`) rather than `None`.
+- Every new Postgres write/read (alerts, agent step log, audit table) uses `asyncpg`/`psycopg` **parameterized queries** (`$1, $2, ...` or `%s` placeholders passed as a separate args tuple) — never f-string or `.format()` into SQL text. This applies especially to alert `message`/`annotations` fields, which come from `alert.py`'s `to_prompt()` — arbitrary upstream-controlled text.
+- The webhook's raw payload (`ctx.raw`) is stored as JSONB via a bound parameter (`INSERT INTO alerts (payload) VALUES ($1)` with the dict passed as the param, letting the driver serialize it) — never JSON-dumped into an f-string.
+- Code review checklist item for phase 10/11: grep the diff for `f"""` / `f"` immediately followed by `SELECT`/`INSERT`/`UPDATE`/`MERGE` and reject on sight, given the repo's demonstrated pattern of doing exactly this in `db.py` and `mcp_server.py`.
+- Do not fix the old `db.py`/`mcp_server.py` files as part of this milestone (out of scope) — but do not copy their pattern into the new files, and flag them in the PR description as known pre-existing debt so a reviewer doesn't assume "this is how the repo does it" is sanctioned.
 
-**Warning signs:**
-Agent appears to "think" indefinitely with repeated tool calls to the same endpoint. Streamlit spinner runs for >30 seconds. Tool call log shows the same Cypher query executed 3+ times.
+**Warning signs:** any new file with `f"""` immediately preceding a SQL/Cypher keyword; any `subprocess.run` wrapping a string-built script.
 
-**Phase to address:** Phase 2 (LangGraph state machine design) — set recursion limit and termination routing at graph construction time.
-
-**Demo risk:** A RecursionError traceback is the most visually damaging failure during a live demo. It also exposes the implementation stack. Non-recoverable without restarting Streamlit.
+**Phase to address:** Phase 10 (persistence + API) — set the parameterized-query convention in the very first migration/DAO code, since every later phase (11, 12) writes through this same layer.
 
 ---
 
-### Pitfall 5: Memgraph Data Is Lost on Container Restart (Default In-Memory Mode)
+### Pitfall 5: Executing remediation post-approval without closing the TOCTOU gap or re-validating the allowlist at execution time
 
 **What goes wrong:**
-Memgraph's default storage mode is `IN_MEMORY_TRANSACTIONAL`. The seed script that populates the 14-node service topology runs once during setup. If the Memgraph container is restarted (Docker Compose `restart: unless-stopped` doesn't prevent this during demo-machine reboots), all graph data is gone and the topology traversal tool returns empty.
+Between "human clicks Approve" and "executor actually runs the command," several things can go stale: the approval record can be replayed (double-submit on a slow UI, or two browser tabs both showing the pending approval), the *proposed* command can differ from what gets executed if the executor re-derives the command from mutable state instead of the exact string that was shown to and approved by the human (classic time-of-check/time-of-use), and an allowlist check performed only at proposal time (when the LLM drafts the remediation) gives no guarantee the same check runs again immediately before `subprocess` invocation.
 
-**Why it happens:**
-WAL files and snapshots are written to `/var/lib/memgraph` inside the container. Without a Docker volume mount, this path is ephemeral. The `memgraph/memgraph-mage` image does not persist data between container restarts by default.
+**Why it happens:** it's natural to treat "the LLM proposed an allowlisted action" and "the human approved" as sufficient gating, forgetting that the object executed must be re-validated at the moment of execution, and that "approved" is a state that can be read by two racing requests.
 
 **How to avoid:**
-Mount a named Docker volume to `/var/lib/memgraph`: `volumes: - memgraph_data:/var/lib/memgraph`. Also make the seed script idempotent (use `MERGE` not `CREATE` for nodes) so it can be safely re-run without creating duplicates if data already exists. Verify with `MATCH (n) RETURN count(n)` immediately before demo starts.
+- **Never let the LLM construct a shell string.** The allowlist is a set of *parameterized action templates* (e.g., `restart_service(service_name: str)` → `["kubectl", "rollout", "restart", f"deployment/{service_name}"]` built with `subprocess.run([...], shell=False)` and a list, never a single interpolated string passed to `shell=True`). Validate `service_name` against the known topology service set (Memgraph node names) before building the argv list — this closes command injection at the same layer that closes the SQL-injection habit above.
+- **Re-check the allowlist and the approval row's status at execution time, inside the same transaction that flips status to `executing`.** `UPDATE approvals SET status='executing' WHERE id=$1 AND status='pending' RETURNING *` — zero rows returned means someone already claimed/executed/expired this approval; abort. This is the same atomic-conditional-update pattern as the webhook dedupe (Pitfall 3), applied to approval consumption instead of alert insertion, and is what actually prevents double-execution — a `SELECT` followed by an `UPDATE` is exactly the check-then-act race Pitfall 3 warns about.
+- **Bind the executed command to the approval row, not to live state.** Store the fully-resolved argv (or template + params) in the `approvals` row at proposal time; execution reads *that stored value*, not a fresh re-derivation from current alert/topology state — otherwise the service topology could have changed between proposal and click, and the human approved a description of an action that doesn't match what runs.
+- **Write the audit trail before and after execution, not only after.** Row states: `proposed → approved → executing → succeeded|failed`, each transition its own timestamped row/update, so a crash mid-execution leaves visible evidence of "we started this" rather than silence.
+- **Blast-radius controls:** enforce a hard low ceiling (e.g., exactly one action per approval, one target service, no wildcard/glob targets) and require the allowlist to be a Python enum/mapping checked into source, never data loaded from the DB or from LLM output — an LLM should never be able to add a new allowlisted verb by generating one that merely looks like an existing name.
 
-**Warning signs:**
-Agent's Cypher BFS query returns 0 nodes. `MATCH (n) RETURN count(n)` in Memgraph Lab returns 0. No service nodes visible in the Lab graph view.
+**Warning signs:** two `executing` rows for one approval id; the audit log missing the intermediate `executing` state; any code path where the argv list is built from a variable that also flows into a ClickHouse/Cypher query elsewhere unescaped (same-shaped bug as Pitfall 4, different sink).
 
-**Phase to address:** Phase 1 (Infrastructure Setup) — volume mount must be in the compose file from the start.
-
-**Demo risk:** If the demo machine was shut down the night before the demo, all topology data is gone. No volume = guaranteed demo failure.
+**Phase to address:** Phase 11 (agent HITL gates) — the allowlist template design and the conditional `UPDATE ... WHERE status='pending'` claim pattern are core to this phase, since they sit directly on the interrupt/resume boundary. Phase 10 provides the audit table schema this depends on.
 
 ---
 
-### Pitfall 6: Streamlit AsyncIO Event Loop Conflict with LangGraph `.astream()`
+### Pitfall 6: `0001-01-01` / Go zero-value timestamps and RFC3339-nanosecond parsing regressing when moved into Postgres columns
 
-**What goes wrong:**
-When the LangGraph client is cached with `@st.cache_resource` and `.astream()` is used for streaming tool events, the second conversation turn raises `RuntimeError: Event loop is closed`. Streamlit creates a temporary event loop to handle async generators, then tears it down. Cached LangGraph clients retain references to the closed loop.
-
-**Why it happens:**
-Confirmed in Streamlit GitHub issue #12076 (open as of 2026-08): when `st.write_stream` receives an async generator, it creates a temporary event loop. On the second execution, `@st.cache_resource` returns the same LangGraph graph object, whose internal HTTP client (for LLM calls) holds a reference to the now-closed loop.
-
-**How to avoid:**
-Use synchronous `.stream()` (not `.astream()`) with `@st.cache_resource`. If streaming token-by-token is required, use a sync generator wrapper around `.stream()` with `stream_mode="messages"`. Do not mix `@st.cache_resource` with async generators. Alternatively, recreate the graph object per session using `st.session_state` instead of `@st.cache_resource`.
-
-**Warning signs:**
-Works on first user message, fails on second. `RuntimeError: Event loop is closed` in Streamlit logs. The app requires a page refresh after every agent invocation.
-
-**Phase to address:** Phase 3 (Streamlit UI integration) — validate multi-turn conversation before declaring the UI complete.
-
-**Demo risk:** A live demo always involves at least two queries: the setup question and the incident question. The second query will fail if this is not resolved.
+**What goes wrong:** `alert.py::parse_time` already handles two Go-specific timestamp quirks correctly for the in-memory `AlertContext` (nanosecond fractional seconds truncated to 6 digits for `datetime.fromisoformat`, and Alertmanager's `0001-01-01...` zero value for "unset" treated as `None` rather than a real ancient date). The risk when this data lands in Postgres is regression at the boundary: (1) inserting `resolved_at` as `NULL` (correct) vs. accidentally letting a raw unparsed `"0001-01-01T00:00:00Z"` string reach the column if any new code path bypasses `parse_time` (e.g., a direct dict access on `ctx.raw` for a "raw payload preserved" JSONB field is fine — the bug is if a *typed* column reads from `raw` instead of from the already-parsed `AlertContext` field); (2) storing `TIMESTAMP` instead of `TIMESTAMPTZ` — `parse_time` returns tz-aware UTC datetimes, and a naive/local column silently drops or reinterprets the offset on write.
+**Why it happens:** the payload JSONB column and the typed timestamp columns are two representations of the same event; it's easy for a later query/report to read the convenient one (JSONB) and skip the already-solved parsing logic.
+**How to avoid:** typed alert columns (`fired_at`, `resolved_at`) are populated exclusively from `AlertContext.fired_at`/`resolved_at` (already-parsed, UTC-aware `datetime` objects), never re-parsed from `raw`; declare them `TIMESTAMPTZ`; `resolved_at` is nullable and stays `NULL` for the zero-value case, never a sentinel date. Add one test asserting that an alert payload with `endsAt: "0001-01-01T00:00:00Z"` round-trips through the DB as `NULL`.
+**Warning signs:** a report/query that joins on `raw->>'startsAt'` instead of the typed column; any alert row showing `resolved_at` in year 1 or 0001.
+**Phase to address:** Phase 10 (persistence + API) — schema design and insert-path field mapping.
 
 ---
 
-### Pitfall 7: Memgraph BFS Syntax Is Not Compatible with Neo4j/Standard Cypher
+### Pitfall 7: SSE clients each holding an open Postgres LISTEN connection — pool exhaustion under normal multi-tab usage
 
-**What goes wrong:**
-The agent's topology traversal tool uses Cypher. Queries written using Neo4j-style `shortestPath()` or `allShortestPaths()` functions fail silently or raise syntax errors in Memgraph. The demo's Cypher queries must use Memgraph's native BFS syntax.
-
-**Why it happens:**
-Memgraph implements `*BFS` as a relationship pattern modifier, not as a function. Neo4j uses `shortestPath((:A)-[*]-(:B))`. Memgraph uses `MATCH p = (:A)-[*BFS]->(:B) RETURN p`. LLM-generated Cypher (if the agent ever generates queries dynamically) defaults to Neo4j syntax from training data.
-
-**How to avoid:**
-All Cypher queries in the agent tools must be static, pre-written strings (not dynamically generated by the LLM). Use Memgraph's `[*BFS]` syntax for topology traversal. Include a smoke test: run the BFS query against the live Memgraph instance during the Phase 1 infrastructure validation step. Document the exact query strings in the codebase with a comment explaining why Neo4j syntax does not apply.
-
-**Warning signs:**
-`SyntaxError: Invalid input 'shortestPath'` from Memgraph. Traversal returns zero paths between nodes that are demonstrably connected. Cypher queries work in a Neo4j instance but fail in Memgraph.
-
-**Phase to address:** Phase 2 (Cypher BFS tool implementation) — test against live Memgraph, not a Neo4j sandbox.
-
-**Demo risk:** Topology traversal is the first and most visually impressive tool call in the demo. A syntax error here breaks the entire RCA chain.
+**What goes wrong:** the natural implementation opens a dedicated `asyncpg`/`psycopg` connection per SSE client and issues `LISTEN alerts_channel` on it, since `LISTEN` is connection-scoped and can't share a pooled connection that gets returned between queries. With a typical connection pool sized for request/response traffic (e.g., 10-20), a handful of dashboard tabs left open (normal SRE behavior — a dashboard tab per monitor) exhausts the pool, and every *other* request (webhook ingestion, the React SPA's own REST polling, approval submission) starts blocking or erroring.
+**Why it happens:** `LISTEN/NOTIFY` requires a long-lived, dedicated connection per listener, which is structurally different from every other DB access pattern in the app (borrow-query-return).
+**How to avoid:** run exactly **one** dedicated `LISTEN` connection for the whole process (in the FastAPI lifespan), fan its `NOTIFY` payloads out to per-client `asyncio.Queue`s held in memory, and have each SSE handler `await` its own queue rather than opening its own DB connection. This decouples "number of SSE clients" from "number of DB connections" entirely — the pool sizing only has to account for normal request traffic.
+**Warning signs:** connection pool exhaustion errors correlating with SSE client count, not request rate; `too many clients already` from Postgres under light dashboard usage.
+**Phase to address:** Phase 12 (SPA + replay) — this is the SSE fan-out architecture decision, made once when the `/events` endpoint is built.
 
 ---
 
-### Pitfall 8: Qdrant Collection Recreation Fails if Vector Dimension Changes
+### Pitfall 8: The initial-snapshot race — events emitted between "page loads its REST snapshot" and "EventSource subscribes" are silently lost
 
-**What goes wrong:**
-If the runbook embedding script is run twice — once with one embedding model (e.g., OpenAI `text-embedding-3-small` at 1536 dims) and once with a different model (e.g., a local model at 768 dims) — Qdrant rejects the upsert with a dimension mismatch error. Worse, if the collection name stays the same but dimensions change, all subsequent queries silently return garbage results or raise errors.
-
-**Why it happens:**
-Qdrant collections lock their vector size at creation time. Changing the embedding model requires deleting and recreating the collection. In a 3-day sprint where models might be swapped for cost/latency reasons, this is a common mid-sprint breakage.
-
-**How to avoid:**
-Pin the embedding model in a single configuration constant and never change it mid-sprint. Include `recreate_collection=True` (or delete-then-create) in the hydration script so it is idempotent. After hydration, verify: `client.get_collection("runbooks").vectors_count` should match the number of runbook files seeded.
-
-**Warning signs:**
-`ValueError: Vector dimension mismatch` from Qdrant. Semantic search returns irrelevant results or empty sets. Collection shows correct point count but searches return wrong runbooks.
-
-**Phase to address:** Phase 2 (Qdrant hydration) — pin embedding model before writing the hydration script.
-
-**Demo risk:** Wrong runbook returned during the live incident scenario breaks the remediation narrative. The agent will recommend the wrong fix for the chaos-injected failure.
+**What goes wrong:** `NOTIFY` delivers only to connections that are already `LISTEN`ing at the moment it fires — it is not a queue and has no replay/backlog. If the SPA first fetches a REST snapshot (`GET /alerts`) and *then* opens the `EventSource` connection, any status change or step-graph event that happens in that gap is never delivered, and the UI is stuck showing stale data until the next event arrives (which may be minutes away, or never, if that was the last event of the run).
+**Why it happens:** snapshot-then-subscribe is the obvious naive ordering (get current state, then listen for changes), but it has a window; the correct ordering is subscribe-then-snapshot, or a sequence-numbered reconciliation.
+**How to avoid:** either (a) open the SSE connection first, and only once the server confirms it is actively `LISTEN`ing does the server itself push an initial full-state event as the *first* SSE message (so "connect" and "get current state" are the same request, ordered correctly on the server side, not two racing client-side calls), or (b) tag every alert/step-log row with a monotonically increasing sequence number, have the client remember the last sequence number it rendered, and on (re)connect send `Last-Event-ID` (native `EventSource` reconnect header) so the server can backfill anything missed from Postgres before switching to live `NOTIFY` forwarding.
+**Warning signs:** a step graph that "misses" the very first tool call of a run right after page load, but is correct for everything after; discrepancies that only appear on hard refresh timed against an in-flight incident.
+**Phase to address:** Phase 12 (SPA + replay) — design the `/events` endpoint to push the snapshot as the first SSE frame server-side, and use `Last-Event-ID` for reconnects, rather than a client-side fetch-then-subscribe sequence.
 
 ---
 
-### Pitfall 9: Total Stack RAM Exceeds 16GB on Demo Machine
+### Pitfall 9: Reverse proxy buffering SSE, and missing heartbeats leaving dead connections undetected
 
-**What goes wrong:**
-The combined memory requirement of all services is approximately 13–16 GB:
-- OTel Astronomy Shop (full mode): ~6 GB
-- OTel Astronomy Shop (minimal mode, no Kafka): ~3 GB
-- SigNoz (ClickHouse + ingestion + query service): ~4 GB
-- Memgraph MAGE (demo scale): ~500 MB
-- Qdrant: ~200 MB
-- LangGraph agent + Streamlit: ~500 MB
-
-On a 16 GB MacBook, running the full OTel demo + SigNoz simultaneously leaves ~2–3 GB free, causing ClickHouse to OOM-kill or ClickHouse Keeper to enter a segfault restart loop (a documented issue with Docker Desktop on macOS).
-
-**How to avoid:**
-Use OTel demo **minimal mode** (`docker compose -f compose.yaml -f compose.minimal.yaml up`) to reduce footprint to ~3 GB. This disables Kafka and dependent services. Verify the paymentservice is still included in minimal mode (it is; only Kafka-dependent services are dropped). Allocate at least 14 GB to Docker Desktop's memory limit under Preferences > Resources. The demo machine should have 32 GB RAM for comfort.
-
-**Warning signs:**
-ClickHouse container exits with code 137 (OOM). `docker stats` shows containers at memory limits. SigNoz ingestion falls behind. Streamlit responses are slow even before any agent logic runs.
-
-**Phase to address:** Phase 1 (Infrastructure Setup) — validate stack memory footprint on the actual demo machine.
-
-**Demo risk:** OOM failures are non-deterministic and tend to appear under load (i.e., when the chaos injection script fires and telemetry volume spikes). This is exactly the worst time for a container restart.
+**What goes wrong:** any intermediary buffering the response (a reverse proxy, or FastAPI/Starlette serving it without disabling buffering) can hold SSE chunks until a buffer threshold is hit, turning "live" updates into "arrives in bursts every N KB." Separately, without periodic heartbeat comments (`: ping\n\n`), a half-closed connection (client's laptop slept, network dropped without a clean FIN) looks identical to an idle-but-healthy one from the server's perspective, so a dead SSE generator can sit consuming a queue/task slot indefinitely.
+**How to avoid:** set `X-Accel-Buffering: no` (if fronted by nginx-style proxy) and `Cache-Control: no-cache` on the SSE response; send a comment-only heartbeat frame every ~15-30s; on the client, rely on native `EventSource` auto-reconnect (it reconnects on its own after a drop) but pair it with the `Last-Event-ID` backfill from Pitfall 8 so a reconnect doesn't just resume blind.
+**Warning signs:** step graph updates that appear in visible batches rather than one-by-one in a dev environment behind any proxy; server task/connection count that only grows, never shrinks, as tabs are closed without a clean disconnect.
+**Phase to address:** Phase 12 (SPA + replay).
 
 ---
 
-### Pitfall 10: Memgraph Lab "Live Graph Highlighting" Requires Manual Intervention
+### Pitfall 10: Bare `asyncio.create_task()` for the agent run — task silently garbage-collected or its exception swallowed
 
-**What goes wrong:**
-The PROJECT.md goal of "Memgraph Lab live node-highlighting as agent traverses" implies real-time graph updates in the browser as the agent's BFS runs. Memgraph Lab does not auto-refresh or subscribe to graph changes. It displays query results only when a query is explicitly executed.
-
-**Why it happens:**
-Memgraph Lab is a query-and-visualize tool, not a reactive graph visualization dashboard. There is no WebSocket subscription mechanism that pushes node highlights to an open browser tab. The "live" effect requires either: (a) polling from the Streamlit UI side, or (b) a post-traversal approach where the agent logs the traversal path and the user runs a highlighting query in Lab manually.
-
-**How to avoid:**
-Design the demo flow as: agent completes traversal → agent returns the list of traversed nodes → presenter runs a pre-written Cypher query in Memgraph Lab (`MATCH path = ...` using the identified service names) → Lab renders the highlighted subgraph. This is a 2-step visual that still reads well. Do not build a real-time streaming architecture just for demo aesthetics. Alternatively, embed a D3/pyvis graph in Streamlit itself using the traversal results.
-
-**Warning signs:**
-No automatic graph update in Memgraph Lab when the agent runs. Expecting `MATCH (n) WHERE n.highlighted = true RETURN n` to update in real time — it won't.
-
-**Phase to address:** Phase 3 (Demo choreography) — the dual-screen visual must be rehearsed, not assumed to work automatically.
-
-**Demo risk:** The split-screen demo visual is a centerpiece. If the presenter expects Lab to auto-update and it doesn't, there's an awkward pause. Pre-scripting the Lab query execution as a step in the demo script eliminates this risk.
+**What goes wrong:** replacing the current `threading.Thread(target=run_alert, ...).start()` with `asyncio.create_task(run_alert_async(ctx))` (natural when the webhook handler becomes async to talk to Postgres) without holding a reference means the event loop keeps only a weak reference to the task — it can be garbage-collected mid-run, and any exception it raises is never retrieved, so it's logged only as an opaque "Task exception was never retrieved" with no application context, not routed through this repo's existing `log.exception("[%s] %s failed", ...)` pattern in `run_alert`.
+**Why it happens:** `create_task` looks like fire-and-forget by design, and nothing raises immediately when the reference is dropped — the failure is silent and probabilistic (GC timing), making it hard to catch in quick manual testing.
+**How to avoid:** keep a module-level `set()` of in-flight tasks, add each new task to it, and register a `task.add_done_callback(tasks.discard)` so the set self-cleans on completion while holding a strong reference for the task's full lifetime; the done-callback (or an explicit `try/except` inside the coroutine, matching the existing `run_alert`'s "must never raise" contract) is what surfaces exceptions into structured logs instead of asyncio's fallback logger. On FastAPI shutdown (lifespan), await/cancel all tasks in the set with a timeout so a reload/redeploy doesn't kill in-flight agent runs invisibly — or, better, rely on the checkpointer (Phase 11) so an interrupted/killed run resumes on next process start rather than needing graceful in-process shutdown at all.
+**Warning signs:** agent runs that "just stop" with no log line at all (vs. the current code's guaranteed `log.exception` on any failure); run count metrics that don't match completed+failed counts.
+**Phase to address:** Phase 10/11 boundary — whichever phase converts the webhook handler to async and replaces `threading.Thread` must adopt the strong-reference task-set pattern as part of that conversion, not as an afterthought.
 
 ---
+
+### Pitfall 11: Blocking sync calls (Anthropic SDK, `subprocess` for remediation) inside an async event loop stall every concurrent SSE stream and webhook
+
+**What goes wrong:** once the webhook and SSE endpoints share one FastAPI process/event loop, any blocking call made directly in an `async def` handler — a synchronous Anthropic SDK call inside the LangGraph node, or `subprocess.run(...)` for remediation execution — blocks the *entire* event loop for its duration, freezing every open SSE connection's ability to receive `NOTIFY` fan-out and every other concurrent webhook delivery, not just the one request that made the blocking call. The current code avoids this by construction (agent runs on a real OS thread via `threading.Thread`), so this is a regression risk specifically introduced by moving toward an async-first design for phases 10-12, not a pre-existing problem.
+**Why it happens:** LangChain/Anthropic SDK calls and `subprocess.run` are synchronous APIs; calling them from inside `async def` code without `await asyncio.to_thread(...)` runs them on the loop thread by default.
+**How to avoid:** any synchronous SDK call or `subprocess` invocation inside the agent graph or remediation executor is wrapped in `await asyncio.to_thread(fn, *args)` (the same pattern `db.py` already uses correctly for `_insert_ch`) — or, simpler and consistent with the current design, keep the agent's LangGraph `.stream()` execution running on a dedicated worker thread/executor (not the request-handling event loop) and communicate progress back to the SSE fan-out via the same Postgres LISTEN/NOTIFY channel used for everything else, so the async event loop never directly calls into agent/LLM code at all.
+**Warning signs:** SSE updates for *other* incidents pausing during any single agent's LLM call; webhook `/health` latency spiking exactly when an agent run is mid-tool-call.
+**Phase to address:** Phase 10 (webhook async conversion) sets the pattern; Phase 11 (agent graph) must not violate it when wiring interrupts/tool calls; Phase 12 is unaffected but benefits from the isolation (SSE stays responsive regardless of agent load).
+
+---
+
+### Pitfall 12: React Flow re-layout thrash and unstable node identity on every step-graph event
+
+**What goes wrong:** two related but distinct failures when the step graph grows from live SSE events: (1) running an auto-layout algorithm (dagre/elk) on *every* incoming event recomputes positions for the whole graph each time, causing existing nodes to visibly jump/reflow instead of the new node simply appending — jarring during a live incident and expensive as node count grows; (2) deriving node `id`s from array index or from a value that isn't stable across re-renders (e.g., regenerating a random id each time the event list is mapped to nodes) causes React Flow (keyed by `id`) to unmount/remount existing nodes on every update instead of just adding the new one, losing any node-local UI state (expanded/collapsed) and causing flicker.
+**Why it happens:** it's simplest to recompute the whole `nodes`/`edges` array from the full event log on every SSE message and re-run layout — correct-looking in a demo with 5 events, visibly bad by 30+.
+**How to avoid:** derive each node's `id` deterministically from a stable identity already present in the agent event (e.g., `f"{node_name}:{step_index}"` from the LangGraph `stream_mode="updates"` sequence, or a DB-assigned step-log row id) so the same logical step always maps to the same React Flow id across re-renders; only run auto-layout for genuinely *new* nodes (position new nodes relative to their parent/predecessor, e.g., dagre incremental layout or a simple "append below last node of this branch" heuristic) rather than re-laying-out the whole graph on each event; memoize existing node/edge objects (React Flow supports partial updates) so unaffected nodes don't get new object identities each render.
+**Warning signs:** the whole graph visibly reflowing/jumping on each new step during a live demo; browser dev tools showing full component remounts (not just re-renders) of already-rendered step nodes.
+**Phase to address:** Phase 12 (SPA + replay) — decide the node-id derivation and incremental-layout strategy before wiring live SSE updates into the graph, since retrofitting stable ids after the fact means touching every event-to-node mapping call site.
 
 ## Technical Debt Patterns
 
 | Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
-|----------|-------------------|----------------|-----------------|
-| Hardcoded Cypher query strings in tool functions | No query builder needed for demo | Fragile when service names or schema change; no parameter injection safety | Acceptable for 3-day demo if strings are extracted to a constants file |
-| `qdrant_client.QdrantClient(":memory:")` instead of server mode | No Docker service needed during development | Data lost on process restart; cannot test against prod-realistic Qdrant | Only in unit tests; use server mode from Day 1 for integration |
-| Static `recursion_limit=10` | Prevents infinite loops | Will fail for multi-hop incidents requiring >10 steps | Acceptable for demo with known 3-tool flow |
-| Single LangGraph graph instance in `st.session_state` | Simple code | No conversation isolation between users (single-user demo assumption) | Acceptable for single-org demo; must be revisited for multi-user |
-| No retry logic on Bolt/ClickHouse/Qdrant tool calls | Simpler code | Network hiccup during demo = unhandled exception | Never — add 1-retry wrapper to all tool calls before demo day |
-| Direct ClickHouse SQL without parameterization | Fast development | SQL injection risk if service names ever come from user input | Acceptable for agent-generated queries with validated service name inputs only |
-
----
+|----------|-------------------|-----------------|------------------|
+| Keep `threading.Thread` fire-and-forget for the webhook instead of converting to async + task-set | No event-loop/blocking-call rework needed | Can't share the process event loop with SSE cleanly; agent run isn't visible to `/events` without a second signalling path (e.g., have the thread itself issue `NOTIFY` via a short-lived sync connection) | Only as an explicit interim step within phase 10, not as the final phase-12 architecture |
+| In-memory pre-filter dedupe kept alongside the Postgres unique index | Avoids a DB round-trip for obvious millisecond-scale double-POSTs | Two sources of truth that can disagree post-restart | Acceptable as a *pure latency optimization* layered on top of the DB constraint, never as a replacement for it |
+| Single global allowlist table stored in Postgres (editable via SQL) instead of a Python-source enum | Ops can add a new allowed action without a deploy | An LLM-influenced write path (or a compromised admin session) could add a dangerous action without code review | Never for this project — PROJECT.md's stated reason for allowing execution at all is the audit/allowlist guarantee; a DB-editable allowlist breaks that guarantee |
+| Recomputing full graph layout each SSE event (Pitfall 12) rather than incremental positioning | Simpler to implement in a demo timeframe | Visible thrash, degrades with incident length | Acceptable only for the very first Phase 12 spike/prototype, must be replaced before the replay-script demo is considered done |
 
 ## Integration Gotchas
 
 | Integration | Common Mistake | Correct Approach |
-|-------------|----------------|-----------------|
-| OTel Demo → SigNoz | Assuming telemetry flows automatically because both use OTel | Add `otlp_grpc/signoz` exporter in a custom OTel Collector overlay config; repeat all pipeline exporters (arrays replace, don't merge) |
-| Python → Memgraph (Bolt) | Using `neo4j` Python driver v4 without setting `--bolt-server-name-for-init` | Memgraph < 2.11 requires `--bolt-server-name-for-init=Neo4j/5.2.0`; use `neo4j` driver v5+ or `pymgclient` for compatibility |
-| Python → ClickHouse | Using `clickhouse-driver` (TCP port 9000) vs `clickhouse-connect` (HTTP port 8123) | `clickhouse-connect` is the official modern client; TCP driver has known async compatibility issues in threaded environments |
-| Python → Qdrant | Not setting `prefer_grpc=True` | gRPC (port 6334) has lower latency than HTTP for vector search; matters if search is in the agent's hot path |
-| LangGraph → Streamlit | Using `.astream()` with `@st.cache_resource` | Use `.stream()` (sync) with `@st.cache_resource`, or use `.astream()` without caching |
-| SigNoz ClickHouse → Agent SQL | Writing `WHERE timestamp >= time.time() * 1000` | ClickHouse `timestamp` column is nanoseconds: use `int(time.time() * 1e9)` |
-| Memgraph → Agent Cypher | Using `shortestPath()` function from Neo4j docs | Use `[*BFS]` pattern: `MATCH p = (a)-[*BFS]->(b) RETURN p` |
-| Docker Compose → SigNoz install | Using old `deploy/` compose files from SigNoz GitHub | Those are deprecated as of v0.130.0; use Foundry (`foundryctl cast`) |
-
----
+|-------------|-----------------|-------------------|
+| Alertmanager (SigNoz) | Treating `repeat_interval` resends as new incidents | Unique-index on `fingerprint` with `ON CONFLICT DO NOTHING/UPDATE RETURNING` (Pitfall 3) |
+| `AsyncPostgresSaver` | Assuming tables exist because the driver "just works" | Explicit idempotent `.setup()` call in app startup lifespan (Pitfall 2) |
+| Postgres `LISTEN/NOTIFY` | One DB connection per SSE client | One process-wide LISTEN connection fanning out to per-client in-memory queues (Pitfall 7) |
+| `EventSource` (browser) | Assuming no events are missed across reconnects | `Last-Event-ID` + server-side sequence-numbered backfill from Postgres (Pitfall 8) |
+| React Flow | Feeding it a freshly-derived `nodes` array with unstable ids each render | Deterministic id per logical step, incremental layout only for new nodes (Pitfall 12) |
 
 ## Performance Traps
 
 | Trap | Symptoms | Prevention | When It Breaks |
-|------|----------|------------|----------------|
-| ClickHouse query without `ts_bucket_start` filter | Slow queries even on small datasets | Include `ts_bucket_start >= bucket AND ts_bucket_start <= bucket` alongside `timestamp` filter (SigNoz uses composite primary key) | At demo scale — ClickHouse full table scans on cold data take >5 seconds |
-| Qdrant search without payload index | Slow filtered search on `metadata.service` field | Create payload index on filter fields before hydrating: `client.create_payload_index(collection_name, field_name, field_schema)` | Demo scale is small enough this may not surface, but adds 200ms+ per search |
-| Memgraph BFS without index on `name` property | BFS requires full node scan to find start node | `CREATE INDEX ON :Service(name)` before seeding topology | With 14 nodes, this is microseconds; critical at production scale |
-| LangGraph `graph.invoke()` in Streamlit main thread | Blocks all UI updates during LLM inference | Use `st.status` expander with `with st.status("Analyzing...") as status:` to give visual feedback; the blocking is inherent to sync invoke | Becomes visually broken at >10 second tool chains |
+|------|----------|------------|-----------------|
+| Per-SSE-client Postgres connection | Pool exhaustion errors correlate with open dashboard tabs, not request volume | Single shared LISTEN connection + in-memory fan-out (Pitfall 7) | Breaks with as few as (pool_size - normal_traffic_headroom) concurrent tabs — can be single digits |
+| Full-graph re-layout per event | UI jank increasing with incident duration/step count | Incremental layout, stable node ids (Pitfall 12) | Noticeable well before 50 steps; a long-running incident with many tool calls will hit this |
+| Blocking sync call on the shared event loop | All SSE streams pause in lockstep with agent LLM calls | `asyncio.to_thread` or keep agent execution on a dedicated worker thread (Pitfall 11) | Breaks the moment webhook async conversion + SSE share one process, i.e., immediately in phase 10/12, not at scale |
 
----
+## Security Mistakes
+
+| Mistake | Risk | Prevention |
+|---------|------|------------|
+| f-string/`.format()`-built SQL or Cypher in the new Postgres DAO layer (repo's established bad habit — Pitfall 4) | SQL injection via alert `message`/`annotations` (upstream-controlled text) or arbitrary code execution (as in `db.py`'s `subprocess.run([sys.executable, "-c", code])` pattern) | Parameterized queries only; JSONB payload via bound param, never string-built |
+| LLM-authored remediation command strings passed to `shell=True` | Command injection through crafted service names or alert metadata reaching the shell | Fixed argv-list allowlist templates with validated params, `shell=False` (Pitfall 5) |
+| Approval consumed via `SELECT` then `UPDATE` instead of one conditional `UPDATE ... RETURNING` | TOCTOU double-execution of a remediation action | Atomic conditional update as the sole gate for claiming an approval (Pitfall 5) |
+| Allowlist stored as mutable DB data | Bypasses the audit/allowlist guarantee the exclusion in PROJECT.md exists to satisfy | Allowlist as versioned Python source, reviewed like code |
+
+## UX Pitfalls
+
+| Pitfall | User Impact | Better Approach |
+|---------|-------------|-------------------|
+| Dashboard shows stale status until the next unrelated event arrives (Pitfall 8) | Operator thinks an incident is unresolved/unhandled when it's actually already progressed | Server pushes full snapshot as first SSE frame on connect, sequence-numbered backfill on reconnect |
+| Step graph visibly reflows on every new tool call during a live incident (Pitfall 12) | Distracting during exactly the moment the operator most needs to read the graph calmly | Append-only incremental layout |
+| Double-clicking Approve (slow network) silently no-ops the second click with no feedback | Operator unsure whether the action ran once, twice, or not at all | Conditional `UPDATE ... RETURNING` (Pitfall 5) + disable the button optimistically on first click, reconcile via SSE state |
 
 ## "Looks Done But Isn't" Checklist
 
-- [ ] **OTel telemetry pipeline:** Telemetry shows in SigNoz Services page after OTel demo starts — verify by querying `SELECT count(*) FROM signoz_traces.distributed_signoz_index_v2 WHERE timestamp > now() - INTERVAL 5 MINUTE`
-- [ ] **Memgraph topology persistence:** After `docker compose restart memgraph`, `MATCH (n) RETURN count(n)` returns 14 (not 0)
-- [ ] **Qdrant hydration:** After running the seed script, `client.count("runbooks").count` equals the number of runbook files; semantic search for "payment timeout" returns the correct runbook
-- [ ] **LangGraph multi-turn:** Second agent query (after the first succeeds) does not raise `RuntimeError: Event loop is closed`
-- [ ] **Chaos injection repeatability:** Running the chaos script twice produces the same telemetry signature — no state accumulation
-- [ ] **Port audit:** `docker ps --format "table {{.Names}}\t{{.Ports}}"` shows no two services sharing a host port
-- [ ] **Timestamp sanity:** ClickHouse time range query for "last 5 minutes" returns non-zero rows from `distributed_logs_v2`
-- [ ] **Demo machine memory:** `docker stats --no-stream` shows all containers within their limits; no container has been OOM-killed since stack start
-
----
+- [ ] **Webhook dedupe:** Looks done once manual curl testing shows one accepted request → verify concurrent duplicate POSTs (two near-simultaneous requests, same fingerprint) both resolve to one row via `ON CONFLICT`, not via timing luck.
+- [ ] **Interrupt/resume:** Looks done once one approve-click completes a run → verify a second (replayed) resume on the same `thread_id`/approval id is rejected, and that nothing before the `interrupt()` call in that node re-executes visibly (check for duplicate audit rows).
+- [ ] **SSE live updates:** Looks done in a single-tab dev session → verify with the browser network tab that the very first status after page load didn't require a page refresh to appear (Pitfall 8), and that a second browser tab doesn't cause pool errors (Pitfall 7).
+- [ ] **Remediation execution:** Looks done once one allowlisted command runs successfully post-approval → verify a crafted service-name/label value containing shell metacharacters (`;`, `$()`, backticks) is rejected before argv construction, not merely "doesn't happen to break" in the happy path.
+- [ ] **Checkpointer setup:** Looks done in the dev environment where `.setup()` was run manually once → verify a fresh `docker compose up` from an empty Postgres volume succeeds without a manual step.
+- [ ] **Timestamps:** Looks done for normal alerts → verify a payload with `endsAt: "0001-01-01T00:00:00Z"` (Alertmanager's zero value) round-trips as `NULL`, not a year-1 date, in the persisted row.
 
 ## Recovery Strategies
 
 | Pitfall | Recovery Cost | Recovery Steps |
-|---------|---------------|----------------|
-| Port collision discovered during demo | HIGH | Cannot fix live; requires pre-assigned fallback ports in the compose file |
-| No telemetry in SigNoz | HIGH | Restart OTel demo with correct collector config overlay; takes 5–10 minutes to re-accumulate data |
-| Empty Memgraph graph (no volume) | MEDIUM | Re-run seed script; takes ~30 seconds; add volume to compose before next restart |
-| GraphRecursionError mid-demo | HIGH | Wrap in try/except at Streamlit layer with graceful "insufficient data" message; restart required to clear state |
-| Async event loop error | MEDIUM | Refresh Streamlit page (F5); switch to sync `.stream()` to prevent recurrence |
-| Wrong timestamp unit (empty results) | MEDIUM | Fix constant in tool code; no data loss, just a code fix and re-test |
-| Qdrant dimension mismatch | MEDIUM | Delete collection, re-run hydration script with correct model; 2–5 minutes |
-| OOM (ClickHouse killed) | HIGH | Switch to OTel demo minimal mode; increase Docker Desktop memory limit; requires full stack restart |
-
----
+|---------|----------------|-----------------|
+| Duplicate remediation execution already happened | HIGH | Manual incident review; add the conditional `UPDATE ... WHERE status='pending'` retroactively; backfill audit table with a "duplicate-detected" flag for the affected row |
+| In-memory dedupe race caused two agent runs for one incident | LOW | Add the unique index + `ON CONFLICT`; merge/close the duplicate row referencing the same fingerprint |
+| SQL/Cypher injection found in a new DAO function | MEDIUM | Rewrite the call to parameterized form; audit git history for whether the vulnerable version ever ran against untrusted input in a shared environment |
+| React Flow layout thrash shipped to demo | LOW | Swap in stable ids + incremental layout; no data-layer changes needed, purely a frontend fix |
 
 ## Pitfall-to-Phase Mapping
 
 | Pitfall | Prevention Phase | Verification |
-|---------|------------------|--------------|
-| Port collision (SigNoz 8080 vs OTel 8080) | Phase 1: Infrastructure | `docker ps` shows no port collisions; both UIs load |
-| No telemetry in SigNoz | Phase 1: Infrastructure | SigNoz Services page shows all 14 OTel demo services |
-| ClickHouse nanosecond timestamps | Phase 2: Log query tool | Unit test: query for last 5 min returns rows |
-| LangGraph recursion loop | Phase 2: State machine | Manually trigger empty-result tool scenario and verify graceful termination |
-| Memgraph data loss on restart | Phase 1: Infrastructure | `docker compose restart memgraph && MATCH (n) RETURN count(n)` returns 14 |
-| Async event loop (Streamlit + LangGraph) | Phase 3: UI integration | Run 3+ consecutive queries in the Streamlit UI without error |
-| Memgraph BFS syntax | Phase 2: Cypher tool | BFS query against live Memgraph returns expected path |
-| Qdrant dimension mismatch | Phase 2: Qdrant hydration | `client.count("runbooks").count` matches file count; search returns correct result |
-| RAM overcommit | Phase 1: Infrastructure | `docker stats` baseline check on demo machine |
-| Memgraph Lab not auto-refreshing | Phase 3: Demo choreography | Rehearse the manual Lab query step; document in demo script |
-
----
+|---------|-------------------|----------------|
+| Side effects before `interrupt()` re-run on resume | Phase 11 | Trigger one resume; assert no duplicate audit/DB rows for that step |
+| `AsyncPostgresSaver` missing `.setup()` / thread_id design | Phase 10 (setup), Phase 11 (thread_id + resume architecture) | Fresh empty-DB startup succeeds; resume via separate HTTP request works after simulated process restart |
+| In-memory dedupe dict → Postgres unique index | Phase 10 | Concurrent duplicate-fingerprint POST test produces exactly one row |
+| f-string SQL/Cypher construction | Phase 10 | Diff review / grep gate for `f"""`+SQL keyword in new files |
+| TOCTOU / replay on remediation approval | Phase 11 | Double-submit the same approval id concurrently; assert exactly one execution |
+| `0001-01-01` zero-value timestamp handling in Postgres columns | Phase 10 | Test payload with Go zero-value `endsAt` round-trips as `NULL` |
+| Per-client Postgres LISTEN connection pool exhaustion | Phase 12 | Open N dashboard tabs; assert pool usage stays flat, not O(N) |
+| Initial-snapshot race on page load | Phase 12 | Load page, then immediately trigger an event server-side; assert it appears without refresh |
+| Proxy buffering / missing heartbeats | Phase 12 | Verify `X-Accel-Buffering: no` header present; verify heartbeat frames every ~15-30s in captured stream |
+| Bare `create_task` GC / swallowed exceptions | Phase 10/11 boundary (async webhook conversion) | Force an exception in the agent run; assert it appears in structured logs, not asyncio's fallback logger |
+| Blocking sync calls stalling the shared event loop | Phase 10 (pattern), Phase 11 (must not violate) | Load-test: one long agent run in progress; assert SSE latency for other incidents is unaffected |
+| React Flow unstable ids / full re-layout thrash | Phase 12 | Inspect React dev tools during a multi-step replay; assert existing nodes re-render, not remount |
 
 ## Sources
 
-- SigNoz install docs (Docker + Foundry): https://signoz.io/docs/install/docker/
-- SigNoz ClickHouse table/column constants (verified from source): `pkg/query-service/constants/constants.go`, `pkg/query-service/app/logs/v4/query_builder.go` — DB: `signoz_logs`, table: `distributed_logs_v2`, timestamp: nanoseconds
-- SigNoz traces DB: `signoz_traces`, table: `distributed_signoz_index_v2`
-- OTel demo Docker deployment requirements: https://opentelemetry.io/docs/demo/docker-deployment/ — 6 GB full, 3 GB minimal
-- OTel demo compose files and `.env`: https://github.com/open-telemetry/opentelemetry-demo — ENVOY_PORT=8080
-- OTel demo collector config merge behavior (REPLACES arrays): `src/otel-collector/otelcol-config-observability.yml` inline comment
-- LangGraph recursion handling (proactive vs reactive): LangGraph Graph API docs — `GraphRecursionError`, `RemainingSteps`
-- Streamlit + LangGraph async event loop bug: https://github.com/streamlit/streamlit/issues/12076 (open)
-- Memgraph Docker quickstart (ports 7687, 7444, Lab on 3000): https://memgraph.com/docs/getting-started/install-memgraph/docker
-- Memgraph data durability (WAL + snapshots, default path `/var/lib/memgraph`): https://memgraph.com/docs/fundamentals/data-durability
-- Memgraph storage modes (default: IN_MEMORY_TRANSACTIONAL): https://memgraph.com/docs/fundamentals/storage-memory-usage
-- Memgraph vs Neo4j Cypher differences (BFS syntax): https://memgraph.com/docs/querying/differences-in-cypher-implementations — `[*BFS]` replaces `shortestPath()`
-- Memgraph GitHub issue: `node_classification module fails to load due to collections.so name collision` (MAGE module loading issue)
-- Qdrant Python client (local vs server mode): https://github.com/qdrant/qdrant-client
-- Qdrant default config (storage path, no in-memory default): `config/config.yaml`
-- SigNoz ClickHouse connection (Docker exec): https://signoz.io/docs/operate/clickhouse/connect-to-clickhouse/
-- ClickHouse Keeper segfault on Docker Desktop (WSL note in SigNoz docs): https://signoz.io/docs/install/docker/
+- [LangGraph interrupts docs](https://docs.langchain.com/oss/python/langgraph/interrupts) — HIGH confidence (official docs, current)
+- [The Hidden Replay Risk in LangGraph: How "Durable Execution" Can Burn You](https://medium.com/@mehul_parmar/the-hidden-replay-risk-in-langgraph-how-durable-execution-can-burn-you-1d966141e71a) — MEDIUM confidence (community write-up, consistent with official docs)
+- [langgraph#7361 — resume from checkpoint_id becomes replay](https://github.com/langchain-ai/langgraph/issues/7361), [langgraph#4796 — subgraph interrupt restarts instead of resuming](https://github.com/langchain-ai/langgraph/issues/4796) — HIGH confidence (maintainer-tracked issues, confirm the replay-from-node-start behavior)
+- [prometheus/alertmanager#3846 — repeat_interval not respected on duplicate alert](https://github.com/prometheus/alertmanager/issues/3846), [#4108 — gossip cluster duplicate notifications on retries](https://github.com/prometheus/alertmanager/issues/4108) — HIGH confidence (maintainer-tracked issues)
+- [Idempotent Event Delivery for Webhooks](https://meshes.io/blog/idempotent-event-delivery), [Svix — Idempotency and Deduplication](https://www.svix.com/resources/webhook-university/reliability/idempotency-and-deduplication/) — MEDIUM confidence (vendor best-practice docs, consistent pattern across sources)
+- [Real-time updates from postgres using notify listen and SSE](https://tom.catshoek.dev/posts/postgres-sse/) — MEDIUM confidence (independent implementation write-up, matches Postgres docs on LISTEN/NOTIFY being connection-scoped and non-persistent)
+- [FastAPI — Server-Sent Events tutorial](https://fastapi.tiangolo.com/tutorial/server-sent-events/) — HIGH confidence (official docs)
+- [Understanding Pitfalls of Async Task Management in FastAPI Requests](https://leapcell.io/blog/understanding-pitfalls-of-async-task-management-in-fastapi-requests) — MEDIUM confidence, corroborated by [Python asyncio-task docs](https://docs.python.org/3/library/asyncio-task.html) (HIGH confidence, official) on weak-reference task GC behavior
+- Direct repo inspection — `src/webhook/app.py`, `src/webhook/alert.py`, `src/production/db.py`, `src/production/mcp_server.py` — HIGH confidence (primary source, current code)
 
 ---
-*Pitfalls research for: AI SRE agent — LangGraph + Memgraph + SigNoz/ClickHouse + Qdrant*
-*Researched: 2026-08-05*
+*Pitfalls research for: incimin.io v1.7 Incident Dashboard milestone*
+*Researched: 2026-08-08*

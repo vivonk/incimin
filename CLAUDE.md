@@ -97,7 +97,7 @@ An autonomous AI SRE (Site Reliability Engineering) agent that performs real-tim
 | `clickhouse-driver` | Binary protocol, unmaintained, no async | `clickhouse-connect` (official, HTTP protocol, async) |
 | `neo4j>=6.0.0` | Breaks GQLAlchemy's declared dependency `neo4j<6.0.0` | `neo4j==5.28.1` (latest 5.x; pulled in automatically by GQLAlchemy) |
 | `numpy>=2.0` | GQLAlchemy pins `numpy<2.0,>=1.26.4` for Python 3.10-3.12; importing GQLAlchemy with numpy 2.x installed will raise ImportError | `numpy==1.26.4` (explicitly pinned in pyproject.toml) |
-| `langchain` (monolithic) | The `langchain` meta-package installs stale versions; imports from it shadow `langchain-core` and `langchain-openai` | Import directly from `langchain_core`, `langchain_openai`, `langchain_anthropic` |
+| `langchain` (monolithic) — *importing from it* | The `langchain` meta-package installs stale versions; imports from it shadow `langchain-core` and `langchain-openai` | Import directly from `langchain_core`, `langchain_openai`, `langchain_anthropic`. **Installed exception:** `langchain>=1.3,<2` is a required transitive dependency of the Langfuse LangChain integration, which probes `langchain.__version__` to pick its v0/v1 import branch; on the v1 branch every symbol it uses comes from `langchain_core`. Verified additive — `langchain 1.3.14` requires `langchain-core>=1.4.9`, satisfied by the pinned 1.5.3, and downgrades nothing. Do not import from it in project code. |
 | `latest` Docker tags | Non-deterministic; breaks demo reproducibility across machines/CI | Use explicit version tags as listed in Docker Compose section above |
 | Memgraph `memgraph/memgraph` (without MAGE) | Missing BFS/shortest-path Cypher procedures that the agent relies on; must use MAGE image | `memgraph/memgraph-mage:3.12.0` |
 | SigNoz clickhouse `24.3+` | SigNoz charts explicitly warn "not always tested with the latest version"; `24.1.2.5` is the tested-and-pinned version | `clickhouse/clickhouse-server:24.1.2.5` |
@@ -164,17 +164,12 @@ Architecture not yet mapped. Follow existing patterns found in the codebase.
 No project skills found. Add skills to any of: `.claude/skills/`, `.agents/skills/`, `.cursor/skills/`, `.github/skills/`, or `.codex/skills/` with a `SKILL.md` index file.
 <!-- GSD:skills-end -->
 
-<!-- GSD:workflow-start source:GSD defaults -->
-## GSD Workflow Enforcement
+<!-- GSD:workflow-start source:project override -->
+## Workflow
 
-Before using Edit, Write, or other file-changing tools, start work through a GSD command so planning artifacts and execution context stay in sync.
+Edit and Write directly. No planning-workflow gate is required before changing files.
 
-Use these entry points:
-- `/gsd-quick` for small fixes, doc updates, and ad-hoc tasks
-- `/gsd-debug` for investigation and bug fixing
-- `/gsd-execute-phase` for planned phase work
-
-Do not make direct repo edits outside a GSD workflow unless the user explicitly asks to bypass it.
+`.planning/` is retained as reference material — `.planning/research/` (v1.7: STACK, ARCHITECTURE, PITFALLS, FEATURES, SUMMARY), `.planning/REQUIREMENTS.md`, `.planning/ROADMAP.md`, and `.planning/phases/10-*/10-CONTEXT.md` hold verified findings worth consulting. They are not a process to follow.
 <!-- GSD:workflow-end -->
 
 
@@ -185,3 +180,26 @@ Do not make direct repo edits outside a GSD workflow unless the user explicitly 
 > Profile not yet configured. Run `/gsd-profile-user` to generate your developer profile.
 > This section is managed by `generate-claude-profile` -- do not edit manually.
 <!-- GSD:profile-end -->
+
+## Codebase Memory MCP
+
+The `codebase-memory` MCP server (binary: `~/.local/bin/codebase-memory-mcp`, v0.9.0) is
+registered in `.mcp.json` and enabled in `.claude/settings.local.json`. It serves a
+tree-sitter knowledge graph for structural code queries (`search_graph`, `query_graph`,
+`trace_path`, `get_architecture`, `get_code_snippet`, `index_repository`, ...).
+
+Indexed projects — every tool call requires a `project` argument:
+
+| Project id | Root path | Graph |
+|------------|-----------|-------|
+| `Users-sanjay-opentelemetry-demo` | `/Users/sanjay/opentelemetry-demo` | 8,510 nodes / 21,812 edges |
+
+The OTel Astronomy Shop demo is the incident-simulation target for the SRE agent — use
+this graph to reason about its service topology and call chains instead of grepping the
+repo file by file.
+
+Re-index after pulling upstream changes:
+
+```bash
+codebase-memory-mcp cli index_repository --repo_path /Users/sanjay/opentelemetry-demo
+```
