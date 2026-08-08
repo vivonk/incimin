@@ -1,5 +1,10 @@
 {
   "mcpServers": {
+    "codebase-memory": {
+      "command": "/Users/sanjay/.local/bin/codebase-memory-mcp",
+      "args": [],
+      "env": {}
+    },
     "incimin-sre": {
       "command": "npx",
       "args": [

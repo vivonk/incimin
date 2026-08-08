@@ -185,3 +185,26 @@ Do not make direct repo edits outside a GSD workflow unless the user explicitly 
 > Profile not yet configured. Run `/gsd-profile-user` to generate your developer profile.
 > This section is managed by `generate-claude-profile` -- do not edit manually.
 <!-- GSD:profile-end -->
+
+## Codebase Memory MCP
+
+The `codebase-memory` MCP server (binary: `~/.local/bin/codebase-memory-mcp`, v0.9.0) is
+registered in `.mcp.json` and enabled in `.claude/settings.local.json`. It serves a
+tree-sitter knowledge graph for structural code queries (`search_graph`, `query_graph`,
+`trace_path`, `get_architecture`, `get_code_snippet`, `index_repository`, ...).
+
+Indexed projects — every tool call requires a `project` argument:
+
+| Project id | Root path | Graph |
+|------------|-----------|-------|
+| `Users-sanjay-opentelemetry-demo` | `/Users/sanjay/opentelemetry-demo` | 8,510 nodes / 21,812 edges |
+
+The OTel Astronomy Shop demo is the incident-simulation target for the SRE agent — use
+this graph to reason about its service topology and call chains instead of grepping the
+repo file by file.
+
+Re-index after pulling upstream changes:
+
+```bash
+codebase-memory-mcp cli index_repository --repo_path /Users/sanjay/opentelemetry-demo
+```
